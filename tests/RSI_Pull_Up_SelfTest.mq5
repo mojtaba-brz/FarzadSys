@@ -22,20 +22,22 @@ void Check(const bool condition,const string name)
 }
 void RunTests()
 {
+   Check(RSILevel(0)==RSI_Entry_Level && RSILevel(1)==RSI1_Confirmation_Level &&
+         RSILevel(2)==RSI2_Confirmation_Level && RSILevel(3)==RSI3_Confirmation_Level,"independent threshold mapping");
    ready=true;
    for(int mask=0;mask<16;mask++)
    {
       rsi[0]=RSI_Entry_Level+((mask & 1)!=0?-1:1);
-      for(int i=1;i<4;i++) rsi[i]=RSI_Confirmation_Level+((mask & (1<<i))!=0?-1:1);
+      for(int i=1;i<4;i++) rsi[i]=RSILevel(i)+((mask & (1<<i))!=0?-1:1);
       double expected=0;
       if((mask & 3)==3) expected=(mask & 4)==0?Vol:((mask & 8)==0?Vol2:Vol3);
       Check(SelectedVolume()==expected,"confirmation combination "+IntegerToString(mask));
    }
    for(int i=0;i<4;i++) rsi[i]=0;
    rsi[0]=RSI_Entry_Level; Check(SelectedVolume()==0,"main equality forbids entry");
-   rsi[0]=0; rsi[1]=RSI_Confirmation_Level; Check(SelectedVolume()==0,"Conf1 equality forbids entry");
-   rsi[1]=0; rsi[2]=RSI_Confirmation_Level; Check(SelectedVolume()==Vol,"Conf2 equality selects Vol");
-   rsi[2]=0; rsi[3]=RSI_Confirmation_Level; Check(SelectedVolume()==Vol2,"Conf3 equality selects Vol2");
+   rsi[0]=0; rsi[1]=RSI1_Confirmation_Level; Check(SelectedVolume()==0,"Conf1 equality forbids entry");
+   rsi[1]=0; rsi[2]=RSI2_Confirmation_Level; Check(SelectedVolume()==Vol,"Conf2 equality selects Vol");
+   rsi[2]=0; rsi[3]=RSI3_Confirmation_Level; Check(SelectedVolume()==Vol2,"Conf3 equality selects Vol2");
    ready=false; Check(SelectedVolume()==0,"unready RSI forbids entry");
    Check(RearmedState(CONSUMED,RSI_Entry_Level,RSI_Entry_Level)==CONSUMED,"equality cannot rearm");
    Check(RearmedState(CONSUMED,RSI_Entry_Level-1,RSI_Entry_Level)==CONSUMED,"oversold remains consumed");

@@ -18,24 +18,26 @@ Start with XAUUSD M1, confirmations M5/M15/H1. Other instruments and deposit cur
 | Group | Inputs and defaults |
 | --- | --- |
 | Position Sizing | Vol 0.01, Vol2 0.02, Vol3 0.03 lots |
-| RSI | Entry 30, Confirmation 30; RSI1 M5, RSI2 M15, RSI3 H1 |
+| RSI | Entry 30; RSI1/RSI2/RSI3 Confirmation levels each 30; RSI1 M5, RSI2 M15, RSI3 H1 |
 | Trade Management | Take Profit 4, Stop Loss 2 deposit-currency units per position; Magic 300130; Slippage 20 points; Enable Trading true |
 | Fibonacci | Show true, elapsed lookback 24 hours, DodgerBlue |
-| Monitor | Show true, RIGHT_MIDDLE, offsets 20/0 pixels, font 11, white text, black normal background, green confirmation background |
+| Monitor | Show true, RIGHT_MIDDLE, offsets 20/0 pixels, font 9, width 300 pixels, white text, black normal background, green confirmation background |
 
 The actual chart timeframe must be strictly shorter than RSI1, which must be strictly shorter than RSI2, which must be strictly shorter than RSI3. Durations are compared with `PeriodSeconds`, not enum values. Invalid ordering leaves the EA loaded, warns on the chart even if the monitor is hidden, and disables entries. Existing broker-side stops are untouched. Correct the settings or change the chart timeframe to reinitialize.
 
-Monitor placement also supports LEFT_MIDDLE, RIGHT_TOP and LEFT_TOP. Status text is shortened to fit; hover over it for the full message. Offsets are relative to the selected edge/vertical location. The panel repositions on chart resize; extremely small charts may clip the fixed-width table.
+Monitor placement also supports LEFT_MIDDLE, RIGHT_TOP and LEFT_TOP. Status text is shortened to fit; hover over it for the full message. Offsets are relative to the selected edge/vertical location. The panel repositions on chart resize; the compact default is 300 pixels wide with 21-pixel rows (189 pixels tall). `Monitor_Width` and font size remain adjustable; extremely small charts may clip the table. Each RSI row shows its own threshold.
 
 ## Entry and state rules
 
-Every tick reads all four live RSI buffers. With RSI0 < Entry and RSI1 < Confirmation:
+Every tick reads all four live RSI buffers. With RSI0 < Entry and RSI1 < RSI1 Confirmation:
 
-| RSI2 < Confirmation | RSI3 < Confirmation | Requested lots |
+| RSI2 < RSI2 Confirmation | RSI3 < RSI3 Confirmation | Requested lots |
 | --- | --- | --- |
 | false | either | Vol |
 | true | false | Vol2 |
 | true | true | Vol3 |
+
+Each confirmation RSI has its own input (`RSI1_Confirmation_Level`, `RSI2_Confirmation_Level`, `RSI3_Confirmation_Level`), used consistently in sizing, journal confirmations and row highlighting. All default to 30, preserving the original default strategy. The main RSI retains its separate `RSI_Entry_Level`. Existing saved settings using the former shared confirmation input must be updated to the three new inputs.
 
 There is no crossing, closed-bar or Fibonacci filter. All comparisons are strict. Equality neither enters nor rearms. A genuine first attachment is ARMED, permitting an immediate entry. An executed or partially filled entry consumes the signal. Only RSI0 strictly above Entry rearms, including while a position remains open.
 
@@ -78,7 +80,7 @@ Platform references: [OrderCalcProfit](https://www.mql5.com/en/docs/trading/orde
 3. Run a single pass in Visual mode. Add four native RSI(14, Close) indicators on the corresponding charts to compare shift-0 readings; pause/tick through entries. Verify broker SL/TP in the positions and deal history and compare Journal ATTEMPT/EXECUTED records.
 4. Execute the checklist in TEST_PLAN.md. Use controlled custom-symbol ticks for exact threshold/equality, failures, gaps and delayed execution cases; historical data alone cannot guarantee those events. Never change production conditions to force a test.
 5. Repeat on a forex symbol and another supported contract, then a test environment whose deposit currency differs from USD. Inspect actual broker tick size, volume and stop requirements. A valid skip for an infeasible small monetary target is expected, not a solver failure.
-6. Compile/select `RSIPullUp/tests/RSI_Pull_Up_SelfTest`. Run a single pass on XAUUSD M1 with defaults and a short range containing ticks. This test-only EA stops after its first tick and prints `SELFTEST RESULT: passed=... failed=...`. It tests production volume selection, equality/rearming, extrema selection and OrderCalcProfit price-grid properties without submitting orders. It must report zero failures. It intentionally refuses live-chart initialization.
+6. Compile/select `RSIPullUp/tests/RSI_Pull_Up_SelfTest`. Run a single pass on XAUUSD M1 with defaults and a short range containing ticks. This test-only EA stops after its first tick and prints `SELFTEST RESULT: passed=... failed=...`. It tests production volume selection, equality/rearming, extrema selection and OrderCalcProfit price-grid properties without submitting orders. It must report zero failures. Repeat with confirmation levels 25/35/45 to test independent thresholds and equality for each RSI. It intentionally refuses live-chart initialization.
 7. Save tester report, settings, Journal and build logs with each result. A tester pass does not test live network timing or terminal restart recovery; use a demo account for those cases.
 
 All reads are current/past data; there are no forward bar references. The forming bar can change on every tick by design. Parameter optimization is not part of this delivery.

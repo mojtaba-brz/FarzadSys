@@ -86,6 +86,8 @@ For numerical verification, independently call OrderCalcProfit using the logged 
 | R18 | Large order tickets above double's exact integer range | Persisted high/low halves reconstruct exact ticket; history reconciliation uses ulong. |
 | R19 | Gaps, spread spikes, changed account conversion rates | Invalid protections skip; actual gross/net P/L may differ from initial estimates; no claimed exact money guarantee. |
 | R20 | Inputs outside numeric ranges or non-finite, zero/negative money/lots, invalid lookback/font | Initialization rejects numeric-invalid settings. Broker-specific unsupported positive volume rejects at attempt. |
+| R22 | Set confirmation levels to 25/35/45; run the self-test and controlled entry cases around each level | Each RSI uses only its own threshold in entry/sizing, strict equality, journal confirmations and green row background. Main uses Entry independently. |
+| R23 | Attach with default monitor settings; resize chart and adjust width/font | Default panel is 300 by 189 pixels with font 9, shorter TF labels and per-row thresholds. Status truncates with full tooltip; configured width/font and green backgrounds remain functional. |
 | R21 | Full backtest with visual mode off and on | Same strategy decisions from same ticks/settings; graphics do not gate orders. No future data read. |
 
 ## Coverage limits

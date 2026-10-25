@@ -9,7 +9,9 @@ input double Vol2=0.02;
 input double Vol3=0.03;
 input group "RSI Settings"
 input double RSI_Entry_Level=30.0;
-input double RSI_Confirmation_Level=30.0;
+input double RSI1_Confirmation_Level=30.0;
+input double RSI2_Confirmation_Level=30.0;
+input double RSI3_Confirmation_Level=30.0;
 input ENUM_TIMEFRAMES RSI1_Timeframe=PERIOD_M5;
 input ENUM_TIMEFRAMES RSI2_Timeframe=PERIOD_M15;
 input ENUM_TIMEFRAMES RSI3_Timeframe=PERIOD_H1;
@@ -29,7 +31,8 @@ input bool Show_RSI_Monitor=true;
 input MONITOR_POSITION Monitor_Position=RIGHT_MIDDLE;
 input int Monitor_X_Offset=20;
 input int Monitor_Y_Offset=0;
-input int Monitor_Font_Size=11;
+input int Monitor_Font_Size=9;
+input int Monitor_Width=300; // Panel width in pixels
 input color Monitor_Text_Color=clrWhite;
 input color Monitor_Background_Color=clrBlack;
 input color Confirmation_Background_Color=clrGreen;
@@ -197,10 +200,26 @@ bool FindExtrema(const MqlRates &rates[],const datetime start,const datetime now
    }
    return high>=0 && low>=0 && high!=low && rates[high].high>rates[low].low;
 }
+double RSILevel(const int index)
+{
+   if(index==0) return RSI_Entry_Level;
+   if(index==1) return RSI1_Confirmation_Level;
+   if(index==2) return RSI2_Confirmation_Level;
+   return RSI3_Confirmation_Level;
+}
+bool RSILevelsValid()
+{
+   for(int i=0;i<4;i++)
+   {
+      double level=RSILevel(i);
+      if(!MathIsValidNumber(level) || level<0 || level>100) return false;
+   }
+   return true;
+}
 double SelectedVolume()
 {
-   if(!ready || !(rsi[0]<RSI_Entry_Level && rsi[1]<RSI_Confirmation_Level)) return 0;
-   if(rsi[2]<RSI_Confirmation_Level) return rsi[3]<RSI_Confirmation_Level?Vol3:Vol2;
+   if(!ready || !(rsi[0]<RSI_Entry_Level && rsi[1]<RSI1_Confirmation_Level)) return 0;
+   if(rsi[2]<RSI2_Confirmation_Level) return rsi[3]<RSI3_Confirmation_Level?Vol3:Vol2;
    return Vol;
 }
 bool VolumeValid(const double volume,string &reason)
@@ -317,7 +336,7 @@ void AttemptBuy(const double volume)
    if(!Save()) return;
    bool valid=BuildRequest(volume,request,tp_money,sl_money,reason);
    Log(StringFormat("ATTEMPT RSI=[%.5f,%.5f,%.5f,%.5f] conf=[%s,%s,%s] lots=%.8f ask=%.*f TP=%.*f SL=%.*f estimated=[%.4f,%.4f] %s magic=%I64u validation=%s",
-      rsi[0],rsi[1],rsi[2],rsi[3],rsi[1]<RSI_Confirmation_Level?"true":"false",rsi[2]<RSI_Confirmation_Level?"true":"false",rsi[3]<RSI_Confirmation_Level?"true":"false",
+      rsi[0],rsi[1],rsi[2],rsi[3],rsi[1]<RSI1_Confirmation_Level?"true":"false",rsi[2]<RSI2_Confirmation_Level?"true":"false",rsi[3]<RSI3_Confirmation_Level?"true":"false",
       volume,_Digits,request.price,_Digits,request.tp,_Digits,request.sl,tp_money,sl_money,currency,Magic_Number,valid?"OK":reason));
    if(!valid) { Status(reason); return; }
    if(PositionBlocks()) { Consume(); Status("Existing position appeared before submission; signal consumed"); return; }
@@ -355,7 +374,7 @@ void Label(const string name,const string text,const int x,const int y,const col
    SetInt(box,OBJPROP_COLOR,background); SetInt(box,OBJPROP_SELECTABLE,false); SetInt(box,OBJPROP_HIDDEN,true);
    if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_LABEL,0,0,0);
    SetInt(name,OBJPROP_CORNER,CORNER_LEFT_UPPER); SetInt(name,OBJPROP_ANCHOR,ANCHOR_LEFT_UPPER);
-   SetInt(name,OBJPROP_XDISTANCE,x+7); SetInt(name,OBJPROP_YDISTANCE,y+3);
+   SetInt(name,OBJPROP_XDISTANCE,x+5); SetInt(name,OBJPROP_YDISTANCE,y+2);
    SetInt(name,OBJPROP_FONTSIZE,Monitor_Font_Size); SetInt(name,OBJPROP_COLOR,Monitor_Text_Color);
    SetInt(name,OBJPROP_SELECTABLE,false); SetInt(name,OBJPROP_HIDDEN,true);
    if(ObjectGetString(0,name,OBJPROP_TEXT)!=text) ObjectSetString(0,name,OBJPROP_TEXT,text);
@@ -366,7 +385,7 @@ void Monitor()
    if(!timeframe_ok)
       Label(prefix+"warning","INVALID TIMEFRAMES: chart < RSI1 < RSI2 < RSI3 required",10,20,clrMaroon,660,30);
    if(!Show_RSI_Monitor) return;
-   int row=Monitor_Font_Size*2+8, width=420, count=9;
+   int row=Monitor_Font_Size+12, width=Monitor_Width, count=9;
    int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS), ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS,0);
    bool right=Monitor_Position==RIGHT_MIDDLE || Monitor_Position==RIGHT_TOP;
    bool middle=Monitor_Position==RIGHT_MIDDLE || Monitor_Position==LEFT_MIDDLE;
@@ -377,17 +396,20 @@ void Monitor()
    ENUM_TIMEFRAMES tf[4]; tf[0]=_Period; tf[1]=RSI1_Timeframe; tf[2]=RSI2_Timeframe; tf[3]=RSI3_Timeframe;
    for(int i=0;i<4;i++)
    {
-      double level=i==0?RSI_Entry_Level:RSI_Confirmation_Level;
-      string title=i==0?"Main RSI":"RSI"+IntegerToString(i);
+      double level=RSILevel(i);
+      string title=i==0?"Main":"RSI"+IntegerToString(i);
+      string timeframe=EnumToString(tf[i]);
+      StringReplace(timeframe,"PERIOD_","");
       string value=ready?DoubleToString(rsi[i],2):"waiting";
-      Label(prefix+"row"+IntegerToString(i+1),title+" ("+EnumToString(tf[i])+"): "+value,x,y+(i+1)*row,
+      Label(prefix+"row"+IntegerToString(i+1),title+" ("+timeframe+"): "+value+" | <"+DoubleToString(level,1),x,y+(i+1)*row,
          ready && rsi[i]<level?Confirmation_Background_Color:Monitor_Background_Color,width,row);
    }
    Label(prefix+"row5","Signal: "+(signal_state==ARMED?"ARMED":"CONSUMED")+(pending?" | IN FLIGHT":""),x,y+5*row,Monitor_Background_Color,width,row);
    double volume=SelectedVolume();
    Label(prefix+"row6","Entry volume: "+(volume>0?DoubleToString(volume,8):"no valid signal"),x,y+6*row,Monitor_Background_Color,width,row);
    Label(prefix+"row7","Position: "+(PositionBlocks()?"OPEN":"NONE"),x,y+7*row,Monitor_Background_Color,width,row);
-   string compact=StringLen(status_text)>46?StringSubstr(status_text,0,43)+"...":status_text;
+   int max_chars=MathMax(12,(int)((width-10)/(Monitor_Font_Size*0.85)));
+   string compact=StringLen(status_text)>max_chars?StringSubstr(status_text,0,max_chars-3)+"...":status_text;
    Label(prefix+"row8",compact,x,y+8*row,Monitor_Background_Color,width,row);
    ObjectSetString(0,prefix+"row8",OBJPROP_TOOLTIP,status_text);
 }
@@ -443,10 +465,10 @@ void Fibonacci()
 int OnInit()
 {
    ArrayInitialize(handles,INVALID_HANDLE);
-   if(!MathIsValidNumber(RSI_Entry_Level) || !MathIsValidNumber(RSI_Confirmation_Level) || RSI_Entry_Level<0 || RSI_Entry_Level>100 || RSI_Confirmation_Level<0 || RSI_Confirmation_Level>100 ||
+   if(!RSILevelsValid() ||
       !MathIsValidNumber(Take_Profit) || !MathIsValidNumber(Stop_Loss) || Take_Profit<=0 || Stop_Loss<=0 ||
       !MathIsValidNumber(Vol) || !MathIsValidNumber(Vol2) || !MathIsValidNumber(Vol3) || Vol<=0 || Vol2<=0 || Vol3<=0 ||
-      Fibonacci_Lookback_Hours<=0 || Fibonacci_Lookback_Hours>87600 || Monitor_Font_Size<6 || Monitor_Font_Size>40)
+      Fibonacci_Lookback_Hours<=0 || Fibonacci_Lookback_Hours>87600 || Monitor_Font_Size<6 || Monitor_Font_Size>40 || Monitor_Width<180 || Monitor_Width>1000)
    { Log("Invalid numeric input settings"); return INIT_PARAMETERS_INCORRECT; }
    currency=AccountInfoString(ACCOUNT_CURRENCY);
    key=Scope(); prefix=key+"."+(string)ChartID()+".";
