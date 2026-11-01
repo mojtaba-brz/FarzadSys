@@ -188,16 +188,41 @@ void KTRSubmitCandidates(KTRMarket &m,KTRMarket &higher,const bool buy,const boo
    bool b=buy && (Trade_Direction!=TRADE_SELL_ONLY),s=sell && (Trade_Direction!=TRADE_BUY_ONLY);
    // Non-IDLE directions are not first-entry candidates; the other direction can still start.
    if(first) { b=b && ktr_episode[0].state==IDLE; s=s && ktr_episode[1].state==IDLE; }
+   if(!b && !s) return;
    bool joint=first && b && s;
    KTRPlan bp,sp;
    bool bok=b && KTRConfirm(m,higher,1,first) && KTRPrepare(m,1,first,buy_event,buy_method,tf,bp);
    bool sok=s && KTRConfirm(m,higher,-1,first) && KTRPrepare(m,-1,first,sell_event,sell_method,tf,sp);
    if(joint && (!bok || !sok)) { Print("[KTR] Joint first entries rejected: both must qualify"); return; }
+   // No capacity decision exists when signals failed filters/preparation. In
+   // particular a zero first-day baseline must not manufacture a rejected trade.
+   if(!bok && !sok) return;
    double open_loss=0;
-   if(!KTROpenLoss(open_loss)) return;
+   if(!KTROpenLoss(open_loss))
+   { Print("[KTR] Entry blocked: existing account exposure cannot be assessed (pending order, missing/invalid SL, quote or profit calculation)"); return; }
    double proposed=(bok?bp.loss:0)+(sok?sp.loss:0),margin=(bok?bp.margin:0)+(sok?sp.margin:0);
-   if(!KTRRiskFits(ktr_day_balance,AccountInfoDouble(ACCOUNT_EQUITY),open_loss,proposed,Max_Daily_Risk_Percent) ||
-      margin>AccountInfoDouble(ACCOUNT_MARGIN_FREE)) { Print("[KTR] Candidate risk/margin exceeds shared capacity; rejected"); return; }
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY),free_margin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(ktr_day_balance<=0)
+   {
+      PrintFormat("[KTR] Entry blocked: nonpositive daily opening balance; B_day=%.2f equity=%.2f currency=%s baseline_estimated=%s. Initial funding booked during the first tester/account day can reconstruct B_day=0; no positive midnight baseline is assumed",
+         ktr_day_balance,equity,AccountInfoString(ACCOUNT_CURRENCY),ktr_baseline_estimated?"true":"false");
+      return;
+   }
+   if(!KTRRiskFits(ktr_day_balance,equity,open_loss,proposed,Max_Daily_Risk_Percent))
+   {
+      double worst=equity-open_loss-proposed,floor=ktr_day_balance*(1-Max_Daily_Risk_Percent/100.0);
+      PrintFormat("[KTR] Daily-risk rejection: B_day=%.2f equity=%.2f open_SL_loss=%.2f proposed_loss=%.2f projected_worst_equity=%.2f required_equity=%.2f projected_risk=%.4f%% limit=%.4f%% currency=%s baseline_estimated=%s",
+         ktr_day_balance,equity,open_loss,proposed,worst,floor,
+         MathMax(0,ktr_day_balance-worst)/ktr_day_balance*100,Max_Daily_Risk_Percent,
+         AccountInfoString(ACCOUNT_CURRENCY),ktr_baseline_estimated?"true":"false");
+      return;
+   }
+   if(margin>free_margin)
+   {
+      PrintFormat("[KTR] Margin rejection: required_margin=%.2f free_margin=%.2f buy_volume=%.8f sell_volume=%.8f currency=%s",
+         margin,free_margin,bok?bp.request.volume:0,sok?sp.request.volume:0,AccountInfoString(ACCOUNT_CURRENCY));
+      return;
+   }
    bool filled_buy=false,filled_sell=false;
    if(bok) filled_buy=KTRSend(bp);
    if(sok)

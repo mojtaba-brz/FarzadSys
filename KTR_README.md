@@ -256,3 +256,18 @@ Defaults below are literal MQL5 input values. ATR units use the closed relevant 
 - [Official CopyBuffer ordering and offsets](https://www.mql5.com/en/docs/series/copybuffer)
 - [Official OrderCheck example, including successful retcode 0](https://www.mql5.com/en/docs/trading/ordercheck)
 - [Official position-based history access](https://www.mql5.com/en/docs/trading/historyselectbyposition)
+
+## Troubleshooting capacity rejection logs
+
+The original combined `Candidate risk/margin exceeds shared capacity` message did not distinguish causes and could also appear when **no** order survived the signal/filter/preparation gates. That misleading path is now removed: no candidate means no capacity assessment or rejection log.
+
+For viable proposed orders, diagnostics distinguish:
+
+- `Entry blocked: nonpositive daily opening balance`: prints reconstructed `B_day`, equity, currency and baseline completeness. The first tester/account funding booked after midnight may reverse-reconstruct that day's opening balance as zero. This is not a margin failure. The EA does not invent a positive midnight balance or relax the daily limit; the next broker day can have a positive reconstructed baseline.
+- `Daily-risk rejection`: prints opening balance, current equity, all-account remaining SL exposure, proposed risk (combined for a pair), projected worst equity, required minimum equity, projected daily risk, configured limit and baseline completeness.
+- `Margin rejection`: prints required/free margin, proposed BUY/SELL volumes and account currency.
+- Unassessable existing account exposure: explicitly identifies the exposure-assessment gate instead of silently skipping.
+
+A legacy message alone cannot establish which limit rejected a real trade. Recompile the updated main file with its updated include files and collect the detailed Journal line. This change preserves risk percentages, volume sizing, daily baselines and joint-order rejection policy.
+
+`python3 -u tests/ktr/run_submission.py` runs the existing 84 pure checks and 11 additional cases against the **actual production submission function** using explicit broker/indicator stubs. This verifies candidate gating, rejection routing, diagnostic amounts and retained joint-risk behavior; it is not MT5 execution evidence. Output: `tests/ktr/results/submission.txt`.

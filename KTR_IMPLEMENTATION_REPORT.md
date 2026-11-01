@@ -34,3 +34,7 @@ Defaults not prescribed by the task use all additions OFF, fixed-reduction addit
 ## KNOWN LIMITATION
 
 MT5 market orders are non-atomic; opposing submissions may execute unequally. Broker history/comment loss can make exact ownership or an earlier daily equity-only breach unrecoverable without the persistence forbidden by the task. Historical equity extrema are always Estimated: tick gaps, bounded samples/history, historic conversions, swap and broker corrections prevent exact reconstruction. Full recovery of a day lock requires current breach or broker emergency execution evidence; no fictitious history is manufactured. Single-instance dedicated-account operation is required; there is no multichart/terminal coordination. RETURN-only entry execution is skipped. A disconnected/stopped terminal cannot enforce emergency closure, and gaps/slippage can exceed 5%. These limitations and native acceptance work remain explicit before live use.
+
+## Capacity-log follow-up
+
+Fixed a misleading rejection path that ran even when no order passed earlier gates. Genuine blocks now distinguish nonpositive daily baseline, daily-risk capacity, margin and unassessable existing exposure, with diagnostic amounts. Risk limits and baseline policy are unchanged. The original **84 pure checks** plus **11 broker-stubbed submission-control regressions** pass; the latter exercise the production submission function and verify message routing/numbers. See `tests/ktr/results/submission.txt`. MetaEditor and the reported native tester scenario remain NOT TESTED here.
