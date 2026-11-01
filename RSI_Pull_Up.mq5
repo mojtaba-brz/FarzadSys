@@ -1,6 +1,6 @@
-﻿// RSI Pull Up -- current-candle, BUY-only RSI strategy.
+// RSI Pull Up -- current-candle, BUY-only RSI strategy.
 #property strict
-#property version "1.00"
+#property version "2.02"
 #property description "Multi-timeframe RSI BUY strategy with account-currency protective stops."
 
 input group "Position Sizing"
@@ -8,27 +8,22 @@ input double Vol=0.01;
 input double Vol2=0.02;
 input double Vol3=0.03;
 input group "RSI Settings"
-input double RSI_Entry_Level=30.0;
-input double RSI1_Confirmation_Level=30.0;
-input double RSI2_Confirmation_Level=30.0;
-input double RSI3_Confirmation_Level=30.0;
+input int RSI_Entry_Level=30.0;
+input int RSI1_Confirmation_Level=30.0;
+input int RSI2_Confirmation_Level=30.0;
+input int RSI3_Confirmation_Level=30.0;
 input ENUM_TIMEFRAMES RSI1_Timeframe=PERIOD_M5;
 input ENUM_TIMEFRAMES RSI2_Timeframe=PERIOD_M15;
 input ENUM_TIMEFRAMES RSI3_Timeframe=PERIOD_H1;
 input group "Trade Management"
-input double Take_Profit=4.0; // Account currency, per position (estimated gross profit)
-input double Stop_Loss=2.0;   // Account currency, per position (estimated gross loss)
+input int Take_Profit=4.0; // Account currency, per position (estimated gross profit)
+input int Stop_Loss=2.0;   // Account currency, per position (estimated gross loss)
 input ulong Magic_Number=300130;
-input uint Max_Slippage_Points=20;
-input bool Enable_Trading=true;
-input group "Fibonacci Settings"
-input bool Show_Fibonacci=true;
-input int Fibonacci_Lookback_Hours=24;
-input color Fibonacci_Color=clrDodgerBlue;
+const uint MAX_SLIPPAGE_POINTS=10; // Fixed execution deviation; not a user input.
 enum MONITOR_POSITION { RIGHT_MIDDLE, LEFT_MIDDLE, RIGHT_TOP, LEFT_TOP };
 input group "RSI Monitor Settings"
 input bool Show_RSI_Monitor=true;
-input MONITOR_POSITION Monitor_Position=RIGHT_MIDDLE;
+input MONITOR_POSITION Monitor_Position=LEFT_MIDDLE;
 input int Monitor_X_Offset=20;
 input int Monitor_Y_Offset=0;
 input int Monitor_Font_Size=9;
@@ -45,13 +40,10 @@ bool ready=false, timeframe_ok=false, pending=false;
 ulong pending_order=0;
 datetime attempted_bar=0, pending_since=0, last_cancel_try=0;
 string key, prefix, status_text="Starting", last_log="", currency;
-datetime last_log_time=0, fib_checked=0;
+datetime last_log_time=0;
 bool owns_instance_lock=false;
-string fib_status="";
-double fib_high=0, fib_low=0, last_m1_high=0, last_m1_low=0;
-datetime last_m1_time=0;
-datetime fib_t0=0, fib_t1=0;
-double fib_p0=0, fib_p1=0;
+#include "Include/FiboRuntime.mqh"
+#include "Include/FiboChart.mqh"
 
 void Log(const string message)
 {
@@ -86,10 +78,6 @@ bool AcquireInstance()
    owns_instance_lock=GlobalVariableSetOnCondition(lock,(double)ChartID(),previous);
    return owns_instance_lock;
 }
-void FibStatus(const string text)
-{
-   if(fib_status!=text) { fib_status=text; if(text!="") Log(text); }
-}
 bool Save()
 {
    bool ok=true;
@@ -100,6 +88,8 @@ bool Save()
    // Store ticket in two exact 32-bit halves; double cannot represent all ulong tickets.
    if(GlobalVariableSet(key+".orderHi",(double)(pending_order>>32))==0) ok=false;
    if(GlobalVariableSet(key+".orderLo",(double)(pending_order & 0xFFFFFFFF))==0) ok=false;
+   if(GlobalVariableSet(key+".cycle",(double)signal_cycle)==0) ok=false;
+   if(GlobalVariableSet(key+".requestCycle",(double)request_cycle)==0) ok=false;
    GlobalVariablesFlush();
    if(!ok) Log("ERROR: could not persist signal/request state; new orders blocked");
    return ok;
@@ -301,7 +291,7 @@ bool BuildRequest(const double volume,MqlTradeRequest &request,double &tp_money,
    { reason=StringFormat("Invalid stop distance: bid=%.*f SL=%.*f TP=%.*f minimum=%g; targets left unchanged",_Digits,quote.bid,_Digits,sl,_Digits,tp,stops); return false; }
    request.action=TRADE_ACTION_DEAL; request.symbol=_Symbol; request.magic=Magic_Number;
    request.type=ORDER_TYPE_BUY; request.volume=volume; request.price=quote.ask;
-   request.sl=sl; request.tp=tp; request.deviation=Max_Slippage_Points; request.comment="RSI Pull Up";
+   request.sl=sl; request.tp=tp; request.deviation=MAX_SLIPPAGE_POINTS; request.comment="RSI Pull Up";
    long filling=SymbolInfoInteger(_Symbol,SYMBOL_FILLING_MODE);
    if((filling & SYMBOL_FILLING_FOK)!=0) request.type_filling=ORDER_FILLING_FOK;
    else if((filling & SYMBOL_FILLING_IOC)!=0) request.type_filling=ORDER_FILLING_IOC;
@@ -338,15 +328,19 @@ void AttemptBuy(const double volume)
    Log(StringFormat("ATTEMPT RSI=[%.5f,%.5f,%.5f,%.5f] conf=[%s,%s,%s] lots=%.8f ask=%.*f TP=%.*f SL=%.*f estimated=[%.4f,%.4f] %s magic=%I64u validation=%s",
       rsi[0],rsi[1],rsi[2],rsi[3],rsi[1]<RSI1_Confirmation_Level?"true":"false",rsi[2]<RSI2_Confirmation_Level?"true":"false",rsi[3]<RSI3_Confirmation_Level?"true":"false",
       volume,_Digits,request.price,_Digits,request.tp,_Digits,request.sl,tp_money,sl_money,currency,Magic_Number,valid?"OK":reason));
-   if(!valid) { Status(reason); return; }
+   if(!valid) { Observe("VALIDATION_FAILED",false,0,0,0,0,0,reason); Status(reason); return; }
    if(PositionBlocks()) { Consume(); Status("Existing position appeared before submission; signal consumed"); return; }
    // Write intent BEFORE submission. A crash in the send window must never reset to armed.
-   pending=true; pending_since=TimeCurrent(); pending_order=0;
+   pending=true; pending_since=TimeCurrent(); pending_order=0; request_cycle=signal_cycle;
    if(!Save()) { Status("Persistence failed; order not submitted"); return; }
+   ResetLastError();
    bool sent=OrderSend(request,result);
+   int send_error=GetLastError(); // Capture before persistence/logging changes the terminal error.
    pending_order=result.order; Save();
+   if(result.order>0) GlobalVariableSet(key+".oc."+(string)result.order,(double)request_cycle);
+   Observe("REQUEST_RESULT",true,result.order,result.deal,0,result.price,result.retcode,result.comment);
    Log(StringFormat("RESULT sent=%s retcode=%u order=%I64u deal=%I64u filled_volume=%.8f fill=%.*f comment=%s error=%d",
-      sent?"true":"false",result.retcode,result.order,result.deal,result.volume,_Digits,result.price,result.comment,GetLastError()));
+      sent?"true":"false",result.retcode,result.order,result.deal,result.volume,_Digits,result.price,result.comment,send_error));
    if(result.retcode==TRADE_RETCODE_DONE || result.retcode==TRADE_RETCODE_DONE_PARTIAL || result.deal>0)
    {
       Consume();
@@ -385,14 +379,14 @@ void Monitor()
    if(!timeframe_ok)
       Label(prefix+"warning","INVALID TIMEFRAMES: chart < RSI1 < RSI2 < RSI3 required",10,20,clrMaroon,660,30);
    if(!Show_RSI_Monitor) return;
-   int row=Monitor_Font_Size+12, width=Monitor_Width, count=9;
+   int row=Monitor_Font_Size+12, width=Monitor_Width, count=16;
    int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS), ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS,0);
    bool right=Monitor_Position==RIGHT_MIDDLE || Monitor_Position==RIGHT_TOP;
    bool middle=Monitor_Position==RIGHT_MIDDLE || Monitor_Position==LEFT_MIDDLE;
    int x=right?cw-width-Monitor_X_Offset:Monitor_X_Offset;
    int y=(middle?(ch-count*row)/2:0)+Monitor_Y_Offset;
    x=MathMax(0,x); y=MathMax(0,y);
-   Label(prefix+"row0","RSI Pull Up | "+currency,x,y,Monitor_Background_Color,width,row);
+   Label(prefix+"row0","RSI Pull Up v2 | "+currency,x,y,Monitor_Background_Color,width,row);
    ENUM_TIMEFRAMES tf[4]; tf[0]=_Period; tf[1]=RSI1_Timeframe; tf[2]=RSI2_Timeframe; tf[3]=RSI3_Timeframe;
    for(int i=0;i<4;i++)
    {
@@ -412,55 +406,16 @@ void Monitor()
    string compact=StringLen(status_text)>max_chars?StringSubstr(status_text,0,max_chars-3)+"...":status_text;
    Label(prefix+"row8",compact,x,y+8*row,Monitor_Background_Color,width,row);
    ObjectSetString(0,prefix+"row8",OBJPROP_TOOLTIP,status_text);
-}
-void Fibonacci()
-{
-   if(!Show_Fibonacci) return;
-   datetime now=TimeCurrent();
-   MqlRates current[1];
-   bool available=CopyRates(_Symbol,PERIOD_M1,0,1,current)==1;
-   // Read the actual M1 high/low, including on exchange symbols whose bars use Last.
-   // Full-window scans occur once per server second or on any intrabar extremum change.
-   if(available && now==fib_checked && current[0].time==last_m1_time && current[0].high==last_m1_high && current[0].low==last_m1_low) return;
-   fib_checked=now;
-   if(available) { last_m1_time=current[0].time; last_m1_high=current[0].high; last_m1_low=current[0].low; }
-   MqlRates rates[];
-   datetime start=(datetime)((long)now-(long)Fibonacci_Lookback_Hours*3600);
-   int copied=CopyRates(_Symbol,PERIOD_M1,start,now,rates);
-   string name=prefix+"fibo";
-   if(copied<2) { ObjectDelete(0,name); FibStatus("Insufficient M1 Fibonacci history; trading remains independent"); return; }
-   int high=-1,low=-1;
-   if(!FindExtrema(rates,start,now,high,low))
-   { ObjectDelete(0,name); FibStatus("Fibonacci omitted: extrema chronology is ambiguous or range unavailable"); return; }
-   FibStatus("");
-   fib_high=rates[high].high; fib_low=rates[low].low;
-   datetime t0=rates[low].time<rates[high].time?rates[low].time:rates[high].time;
-   datetime t1=rates[low].time<rates[high].time?rates[high].time:rates[low].time;
-   double p0=rates[low].time<rates[high].time?fib_low:fib_high;
-   double p1=rates[low].time<rates[high].time?fib_high:fib_low;
-   bool create=ObjectFind(0,name)<0;
-   if(create)
-   {
-      if(!ObjectCreate(0,name,OBJ_FIBO,0,t0,p0,t1,p1)) { Log("Fibonacci object creation failed"); return; }
-      double levels[7]={0,0.236,0.382,0.5,0.618,0.786,1};
-      ObjectSetInteger(0,name,OBJPROP_LEVELS,7);
-      for(int i=0;i<7;i++)
-      {
-         // MT5 OBJ_FIBO measures level 0 at the SECOND coordinate. Reverse the
-         // internal coefficient so the displayed 0% is the first chronological anchor.
-         ObjectSetDouble(0,name,OBJPROP_LEVELVALUE,i,1.0-levels[i]);
-         ObjectSetString(0,name,OBJPROP_LEVELTEXT,i,DoubleToString(levels[i]*100,1)+"%");
-         ObjectSetInteger(0,name,OBJPROP_LEVELCOLOR,i,Fibonacci_Color);
-      }
-      ObjectSetInteger(0,name,OBJPROP_COLOR,Fibonacci_Color);
-      ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
-      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false); ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
-   }
-   if(create || t0!=fib_t0 || t1!=fib_t1 || p0!=fib_p0 || p1!=fib_p1)
-   {
-      if(!ObjectMove(0,name,0,t0,p0) || !ObjectMove(0,name,1,t1,p1)) Log("Fibonacci anchor update failed");
-      fib_t0=t0; fib_t1=t1; fib_p0=p0; fib_p1=p1;
-   }
+   string swing_tf=EnumToString(EffectiveFiboTF()); StringReplace(swing_tf,"PERIOD_","");
+   string fib_rows[7];
+   fib_rows[0]="FIB: "+ModeName(); fib_rows[1]="Swing TF: "+swing_tf+(FiboReady?"":" | DATA UNAVAILABLE");
+   fib_rows[2]="Pullback: "+SetupState(fib.pullback.state);
+   fib_rows[3]="Pullback Zone: "+(PullbackConfirmed?"YES":"NO");
+   fib_rows[4]="Countertrend: "+SetupState(fib.countertrend.state);
+   fib_rows[5]="Projection Zone: "+(projection_zone==1272?"127.2":(projection_zone==1618?"161.8":"NONE"));
+   fib_rows[6]="Fibo Filter: "+(ActiveFiboMode==FIB_DISABLED || ActiveFiboMode==FIB_OBSERVE_ONLY?"NOT APPLIED":(FiboConfirmed?"PASS":"BLOCK"));
+   for(int i=0;i<7;i++) Label(prefix+"row"+IntegerToString(9+i),fib_rows[i],x,y+(9+i)*row,Monitor_Background_Color,width,row);
+
 }
 int OnInit()
 {
@@ -468,7 +423,7 @@ int OnInit()
    if(!RSILevelsValid() ||
       !MathIsValidNumber(Take_Profit) || !MathIsValidNumber(Stop_Loss) || Take_Profit<=0 || Stop_Loss<=0 ||
       !MathIsValidNumber(Vol) || !MathIsValidNumber(Vol2) || !MathIsValidNumber(Vol3) || Vol<=0 || Vol2<=0 || Vol3<=0 ||
-      Fibonacci_Lookback_Hours<=0 || Fibonacci_Lookback_Hours>87600 || Monitor_Font_Size<6 || Monitor_Font_Size>40 || Monitor_Width<180 || Monitor_Width>1000)
+      !FiboInputsValid() || Monitor_Font_Size<6 || Monitor_Font_Size>40 || Monitor_Width<180 || Monitor_Width>1000)
    { Log("Invalid numeric input settings"); return INIT_PARAMETERS_INCORRECT; }
    currency=AccountInfoString(ACCOUNT_CURRENCY);
    key=Scope(); prefix=key+"."+(string)ChartID()+".";
@@ -482,12 +437,16 @@ int OnInit()
       attempted_bar=(datetime)GlobalVariableGet(key+".bar");
       pending=GlobalVariableGet(key+".pending")!=0;
       pending_since=(datetime)GlobalVariableGet(key+".since");
+      if(GlobalVariableCheck(key+".cycle")) signal_cycle=(long)GlobalVariableGet(key+".cycle");
+      request_cycle=(long)GlobalVariableGet(key+".requestCycle");
       pending_order=((ulong)GlobalVariableGet(key+".orderHi")<<32)|(ulong)GlobalVariableGet(key+".orderLo");
    }
    // A genuine first attachment is armed, unless an owned position already proves entry.
    if(OwnedPosition()) signal_state=CONSUMED;
    if(!Save()) return INIT_FAILED;
    Reconcile();
+   InitFibonacci();
+   RecoverFiboOutcomes();
    timeframe_ok=PeriodSeconds(_Period)>0 && PeriodSeconds(_Period)<PeriodSeconds(RSI1_Timeframe) &&
       PeriodSeconds(RSI1_Timeframe)<PeriodSeconds(RSI2_Timeframe) && PeriodSeconds(RSI2_Timeframe)<PeriodSeconds(RSI3_Timeframe);
    ENUM_TIMEFRAMES tf[4]; tf[0]=_Period; tf[1]=RSI1_Timeframe; tf[2]=RSI2_Timeframe; tf[3]=RSI3_Timeframe;
@@ -506,18 +465,22 @@ void OnTick()
 {
    Reconcile();
    ready=ReadRSI();
+   EvaluateFibonacci();
    if(!ready) Status("Indicator/history not ready; entries disabled");
    else
    {
       SIGNAL_STATE next=RearmedState(signal_state,rsi[0],RSI_Entry_Level);
-      if(next!=signal_state) { signal_state=next; Save(); }
+      if(next!=signal_state) { signal_state=next; signal_cycle++; Save(); Observe("REARM"); }
       double volume=SelectedVolume();
+      bool qualified=volume>0 && signal_state==ARMED;
+      if(qualified && !observed_rsi) Observe("RSI_QUALIFIED");
+      observed_rsi=qualified;
       if(!timeframe_ok) Status("INVALID TIMEFRAMES: new entries disabled");
-      else if(volume>0 && signal_state==ARMED && PositionBlocks())
-      { Consume(); Status("Existing position blocks entry; signal consumed"); }
+      else if(volume>0 && FiboConfirmed && signal_state==ARMED && PositionBlocks())
+      { Observe("POSITION_BLOCKED"); Consume(); Status("Existing position blocks entry; signal consumed"); }
       else if(pending) Status("Execution pending/unresolved; new requests locked");
-      else if(!Enable_Trading) Status("Trading disabled by Enable Trading input");
       else if(signal_state==CONSUMED) Status("Signal consumed; waiting for RSI0 > entry level");
+      else if(volume>0 && !FiboConfirmed) Status("Armed; waiting for Fibonacci confirmation");
       else if(volume>0)
       {
          datetime bar=iTime(_Symbol,_Period,0);
@@ -525,13 +488,13 @@ void OnTick()
       }
       else Status("Armed; waiting for RSI0 and RSI1 confirmation");
    }
-   Fibonacci(); Monitor();
+   ProcessClosedFiboPositions(); DrawFibonacci(); Monitor();
 }
 void OnTimer()
 {
    // Access keeps live state globals alive while the EA runs (terminal expiry is 4 weeks).
    if(key!="" && GlobalVariableCheck(key+".state")) { double keep_alive=GlobalVariableGet(key+".state"); }
-   Fibonacci(); Monitor();
+   EvaluateFibonacci(); ProcessClosedFiboPositions(); DrawFibonacci(); Monitor();
 }
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam)
 {
@@ -550,11 +513,13 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          CancelRemainder(trans.order);
       }
    }
-   Reconcile(); Monitor();
+   if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0) ObserveDeal(trans.deal);
+   Reconcile(); ProcessClosedFiboPositions(); Monitor();
 }
 void OnDeinit(const int reason)
 {
    EventKillTimer();
+   CloseFibonacci();
    for(int i=0;i<4;i++) if(handles[i]!=INVALID_HANDLE) IndicatorRelease(handles[i]);
    if(prefix!="") ObjectsDeleteAll(0,prefix);
    if(owns_instance_lock)
