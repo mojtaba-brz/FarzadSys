@@ -34,37 +34,53 @@ bool KTRUpdateZig(KTRMarket &m)
    return true;
 }
 struct KTRPlan { MqlTradeRequest request; double loss; double margin; double budget; int dir; };
+string ktr_stop_detail="";
 bool KTRStop(KTRMarket &m,const int dir,const double price,double &stop)
 {
-   int end=m.Last(); double tick=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
-   double av[]; if(CopyBuffer(ktr_stop_atr,0,1,1,av)!=1 || av[0]<=0) return false;
+   ktr_stop_detail="";
+   double tick=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(tick<=0) { ktr_stop_detail="Invalid trading tick size"; return false; }
+   double av[];
+   if(CopyBuffer(ktr_stop_atr,0,1,1,av)!=1 || av[0]<=0 || !MathIsValidNumber(av[0]))
+   { ktr_stop_detail=StringFormat("Closed stop-ATR unavailable/invalid; error=%d",GetLastError()); return false; }
    stop=0;
    if(SL_Method==SL_FIXED_DISTANCE) stop=price-dir*Fixed_SL_Distance_Ticks*tick;
    if(SL_Method==SL_FRACTAL)
    {
       double values[]; int count=MathMin(Stop_History_Bars,ArraySize(m.bars)-2);
-      if(CopyBuffer(ktr_fractals,dir>0?1:0,3,count,values)!=count) return false;
+      if(CopyBuffer(ktr_fractals,dir>0?1:0,3,count,values)!=count)
+      { ktr_stop_detail=StringFormat("Confirmed fractal buffer unavailable; requested=%d error=%d",count,GetLastError()); return false; }
       for(int i=count-1;i>=0;i--)
       {
          if(values[i]<=0 || values[i]==EMPTY_VALUE || !MathIsValidNumber(values[i])) continue;
          if(dir*(price-values[i])<Fractal_Min_Distance_ATR*av[0]) continue;
          stop=values[i]-dir*Fractal_SL_Buffer_Ticks*tick; break;
       }
+      if(stop==0)
+      {
+         ktr_stop_detail=StringFormat("No confirmed %s fractal meets minimum distance %.4f ATR (ATR=%.8f, minimum_price_distance=%.8f, history=%d bars)",
+            dir>0?"lower":"upper",Fractal_Min_Distance_ATR,av[0],Fractal_Min_Distance_ATR*av[0],count);
+         return false;
+      }
    }
    if(SL_Method==SL_ZIGZAG)
    {
-      if(!KTRUpdateZig(m)) return false;
+      if(!KTRUpdateZig(m)) { ktr_stop_detail="Missing causal ZigZag replay interval"; return false; }
       for(int i=ArraySize(ktr_frozen_swings)-1;i>=0;i--)
       {
          if(ktr_frozen_swings[i].kind!=dir || dir*(price-ktr_frozen_swings[i].price)<=0) continue;
          stop=ktr_frozen_swings[i].price-dir*ZigZag_SL_Buffer_Ticks*tick; break;
       }
+      if(stop==0) { ktr_stop_detail="No eligible confirmed ZigZag pivot on protective side"; return false; }
    }
    stop=NormalizeDouble(KTRRoundStop(stop,tick,dir),_Digits);
-   if(stop<=0 || dir*(price-stop)<=0) return false;
-   MqlTick quote; if(!SymbolInfoTick(_Symbol,quote)) return false;
+   if(stop<=0 || dir*(price-stop)<=0)
+   { ktr_stop_detail=StringFormat("Selected stop is not protective: entry=%.8f stop=%.8f",price,stop); return false; }
+   MqlTick quote; if(!SymbolInfoTick(_Symbol,quote)) { ktr_stop_detail="No executable bid/ask quote for stop validation"; return false; }
    double distance=MathMax(SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL),SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL))*_Point;
-   return dir>0?quote.bid-stop>distance:stop-quote.ask>distance;
+   bool valid=dir>0?quote.bid-stop>distance:stop-quote.ask>distance;
+   if(!valid) ktr_stop_detail=StringFormat("Stop/freeze restriction: SL=%.8f bid=%.8f ask=%.8f required_distance=%.8f",stop,quote.bid,quote.ask,distance);
+   return valid;
 }
 double KTRAdditionalRisk(KTRMarket &m,const int entry_index)
 {
@@ -158,7 +174,8 @@ bool KTRPrepare(KTRMarket &m,const int dir,const bool first,const datetime event
       (dir>0 && mode==SYMBOL_TRADE_MODE_SHORTONLY) || (dir<0 && mode==SYMBOL_TRADE_MODE_LONGONLY) ||
       (flags&SYMBOL_ORDER_MARKET)==0 || (flags&SYMBOL_ORDER_SL)==0) return false;
    double price=dir>0?quote.ask:quote.bid,stop=0;
-   if(!KTRStop(m,dir,price,stop)) { Print("[KTR] Selected stop unavailable/invalid; signal consumed"); return false; }
+   if(!KTRStop(m,dir,price,stop))
+   { PrintFormat("[KTR] %s %s stop rejected: %s; signal consumed",first?"FIRST":"ADDITION",dir>0?"BUY":"SELL",ktr_stop_detail); return false; }
    double risk_pct=first?First_Entry_Risk_Percent:KTRAdditionalRisk(m,ktr_episode[j].entries+1);
    double budget=AccountInfoDouble(ACCOUNT_EQUITY)*risk_pct/100.0;
    double worst=price+dir*Max_Deviation_Points*_Point,unit=0;
@@ -169,8 +186,9 @@ bool KTRPrepare(KTRMarket &m,const int dir,const bool first,const datetime event
                                SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX));
    if(volume<=0)
    {
-      PrintFormat("[KTR] %s volume rejected: budget=%.2f loss_per_lot=%.2f calculated_lots=%.8f minimum=%.8f step=%.8f entry=%.*f SL=%.*f",
-         first?"FIRST":"ADDITION",budget,loss_per_lot,budget/loss_per_lot,SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),_Digits,price,_Digits,stop);
+      PrintFormat("[KTR] %s %s volume rejected: budget=%.2f minimum_lot_risk=%.2f loss_per_lot=%.2f calculated_lots=%.8f minimum=%.8f step=%.8f entry=%.*f SL=%.*f",
+         first?"FIRST":"ADDITION",dir>0?"BUY":"SELL",budget,loss_per_lot*SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),loss_per_lot,
+         budget/loss_per_lot,SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),_Digits,price,_Digits,stop);
       return false;
    }
    double limit=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_LIMIT),used=0;

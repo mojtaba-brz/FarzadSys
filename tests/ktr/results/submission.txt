@@ -135,4 +135,6 @@ PASS SELL reversal explains no BUY in BUY-only mode
 PASS day lock consumes first candidate without session queue
 PASS risk-rejected first candidate never retried when equity later recovers
 PASS broker-rejected first order not placed back into session wait
-KTR stubbed submission: 21 passed, 0 failed
+PASS standalone SELL candidate submits when BOTH directions are enabled
+PASS downward reversal submits SELL in BOTH mode without a preceding BUY
+KTR stubbed submission: 23 passed, 0 failed

@@ -1,4 +1,4 @@
-# Kumo Trend Rider v1.0
+# Kumo Trend Rider v1.01
 
 **IMPLEMENTED — source implementation.** **TESTED — 112 portable assertions on production calculation/recovery bodies, plus source preservation checks.** **NOT TESTED — MetaEditor compilation, native scripts, broker execution, Strategy Tester, visual rendering or profitability.** See [test evidence](tests/ktr/results/portable.txt) and [acceptance plan](KTR_TEST_PLAN.md). This is an independent EA; existing RSI Pull Up sources and documentation are unchanged.
 
@@ -272,7 +272,7 @@ For viable proposed orders, diagnostics distinguish:
 
 A legacy message alone cannot establish which limit rejected a real trade. Recompile the updated main file with its updated include files and collect the detailed Journal line. The diagnostic change preserves risk percentages, volume sizing and joint-order rejection policy; the subsequent verified tester-initial-funding correction is documented separately below.
 
-`python3 -u tests/ktr/run_submission.py` runs the 112 pure checks and 21 additional cases against the **actual production submission function** using explicit broker/indicator stubs. This verifies candidate gating, rejection routing, diagnostic amounts, joint risk and bounded closure/session waiting; it is not MT5 execution evidence. Output: `tests/ktr/results/submission.txt`.
+`python3 -u tests/ktr/run_submission.py` runs the 112 pure checks and 23 additional cases against the **actual production submission function** using explicit broker/indicator stubs. This verifies candidate gating, rejection routing, diagnostic amounts, joint risk and bounded closure/session waiting; it is not MT5 execution evidence. Output: `tests/ktr/results/submission.txt`.
 
 ## Reversal and addition diagnostics
 
@@ -283,3 +283,17 @@ The revised defaults respond to excessive pyramiding: lifetime cap 3 and fresh-m
 ## Verified tester initial capital
 
 On the first simulated day, MT5 books starting capital as a balance deal. Subtracting that initial funding as though it were an ordinary intraday deposit made the prior build reconstruct a zero day baseline and reject valid first-day entries. In tester mode only, an untruncated, fully balance-reconciled ledger whose first record is positive initial balance funding on this server day now reconstructs `B_day = current balance - day balance movements + verified initial funding`. Later deposits, withdrawals and trading P&L are still excluded from changing that baseline; subsequent days use ordinary reverse reconstruction. The source initial-funding amount is logged explicitly. This does not use the optional P&L override, guess missing balances, change live-account reconstruction or relax the daily risk cap. Missing/unverified initial capital still blocks rather than being invented.
+
+## Identify the executable before interpreting a backtest
+
+Revision 1.01 logs this literal startup identifier before validation:
+
+`[KTR] BUILD KTR-1.01-20261102-H1-DIAGNOSTICS`
+
+The line also records the loaded program path, symbol and chart timeframe. A run lacking the identifier is not executing this source revision. An input dump missing `Max_Additional_Entries_Per_Episode` and `Additional_Require_Fresh_Main_Trigger` likewise predates the addition/session/initial-funding corrections. Loading a `.set` file changes inputs, not executable code.
+
+Update the PR branch and all `Include/KTR/` files, open **that exact main MQ5** in MetaEditor, compile successfully, and select the corresponding EA path in Strategy Tester. Compare the logged path with the file you compiled. Confirm the BUILD line before reviewing signals. Do not delete unrelated EA binaries or relax risk checks to work around a stale build.
+
+Startup reports broker min/step/max volume, tick size, selected stop/ATR settings, equity and first-entry cash budget. Rejected sizing now records BUY/SELL, role, actual budget, `minimum_lot_risk`, unrounded lots and broker minimum. The minimum-lot risk includes the selected stop and modeled cost/deviation reserve. With a small account and distant H1 fractal, that risk may exceed the configured budget even though the signal itself qualifies. Rejection remains the intended behavior in that case; the former silent return is now visible.
+
+Stop rejections distinguish unavailable closed ATR/fractal buffers, no confirmed directional fractal meeting the ATR distance, missing causal ZigZag history/pivot, a nonprotective price and broker stop/freeze restrictions. These are diagnostics, not relaxed stop rules. Native H1 reproduction is still required; source inspection and broker-stubbed SELL tests do not establish actual broker execution.

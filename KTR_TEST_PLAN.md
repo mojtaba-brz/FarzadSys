@@ -1,4 +1,4 @@
-# KTR v1.0 acceptance and Strategy Tester plan
+# KTR v1.01 acceptance and Strategy Tester plan
 
 ## Actual verification ledger
 
@@ -141,14 +141,20 @@ Report: executed trade and episode counts; win rate; net P&L; average trade prof
 
 ## Capacity-log regression follow-up
 
-Run `python3 -u tests/ktr/run_submission.py`. The existing 112 pure checks pass, followed by **21 passed / 0 failed** submission-control cases with explicitly stubbed broker/indicator dependencies. Cases cover no signal, failed confirmation/preparation, occupied first-entry direction, zero opening balance, actual daily-risk failure with independently expected diagnostic amounts, margin failure, unassessable existing exposure, combined pair rejection, and accepted single/pair paths. The function body is extracted from production `Execution.mqh`, not reimplemented in the harness.
+Run `python3 -u tests/ktr/run_submission.py`. The existing 112 pure checks pass, followed by **23 passed / 0 failed** submission-control cases with explicitly stubbed broker/indicator dependencies. Cases cover no signal, failed confirmation/preparation, occupied first-entry direction, zero opening balance, actual daily-risk failure with independently expected diagnostic amounts, margin failure, unassessable existing exposure, combined pair rejection, and accepted single/pair paths. The function body is extracted from production `Execution.mqh`, not reimplemented in the harness.
 
 Native follow-up remains NOT TESTED: reproduce the reported 2026-10-01 01:01 tester decision with the same preset/account configuration; confirm no capacity warning for absent candidates. For a genuine candidate, save the specific detailed baseline/risk/margin line. Test initial funding on the first tester day separately from a positive opening balance on subsequent server days. Do not change the 5% cap to suppress the message.
 
 ## Addition and reversal regression follow-up
 
-The pure suite covers lifetime filled-addition caps, fresh-method latches, full-main-candle cooldown excluding a partial fill candle, and trading-session intervals/overnight carry. The stubbed harness now extracts both production `KTRSubmitCandidates` and `KTRFinishReversal`: explicit broker/time/session stubs verify closure barriers, within-bar deferral, session reopening, no duplicate submission, stale expiry, direction skips and retained risk/broker rejection consumption. **112 pure assertions + 21 stubbed cases pass.** This is not native MT5 broker evidence.
+The pure suite covers lifetime filled-addition caps, fresh-method latches, full-main-candle cooldown excluding a partial fill candle, and trading-session intervals/overnight carry. The stubbed harness now extracts both production `KTRSubmitCandidates` and `KTRFinishReversal`: explicit broker/time/session stubs verify closure barriers, within-bar deferral, session reopening, no duplicate submission, stale expiry, direction skips and retained risk/broker rejection consumption. **112 pure assertions + 23 stubbed cases pass.** This is not native MT5 broker evidence.
 
 Native tests still required: compare the original preset with cap 3/fresh ON; stopped-out additions must still count toward the cap after restart. On M5 with cooldown 1, an addition at 09:29 must not add at 09:30; after a full 09:30-09:35 candle a fresh event may qualify. Verify repeated touches cannot add each candle, independently fresh methods still work, and lower-TF events respect the shared cap/cooldown. Test scheduled closure/reopen inside the eligible signal bar, expiry into the next bar, delayed closing transactions, absent session metadata, holidays, first-day zero baseline, permission and minimum-volume diagnostics. Compare logged forward-cloud values with the correct native indicator location. Revised native build/rerun here: NOT TESTED.
 
 Tester capital regression: pure cases check initial 1000 funding reconstructs first-day B_day 1000, later same-day cash movements do not change that 1000 baseline, normal later-day loss reconstructs opening balance by the original rule, and missing verified initial funding cannot invent a positive balance. Native first-day acceptance must confirm the initial-funding record and baseline log; tester-only branching/history qualification remains unverified in MT5 here.
+
+## Stale executable and H1 SELL follow-up
+
+Revision 1.01 adds BUILD/path and startup contract/sizing diagnostics. Native acceptance must first confirm `BUILD KTR-1.01-20261102-H1-DIAGNOSTICS` and the intended Shared Projects/Experts path. Verify the new inputs appear in the tester dump. Repeat H1 BOTH/TrendStart/3-ATR-fractal configuration and save actual projected BUY/SELL reversal plus rejection lines, especially minimum-lot risk versus cash budget. Record the directional stop reason for any rejected fractal. No change to trading/risk policy is expected from these diagnostic additions.
+
+Two new tests execute production submission/reversal bodies through the existing stubs: standalone SELL submission in BOTH mode and a downward reversal with no preceding BUY. Current checks: **112 pure + 23 stubbed cases pass**. These two tests do not run native fractals, OrderCalcProfit or OrderSend. MetaEditor compilation and H1 native rerun of revision 1.01 remain NOT TESTED here.

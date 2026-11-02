@@ -1,6 +1,6 @@
-// Kumo Trend Rider v1.0 -- independent hedging-account EA.
+// Kumo Trend Rider v1.01 -- independent hedging-account EA.
 #property strict
-#property version "1.00"
+#property version "1.01"
 #property description "Closed-candle projected Kumo / shape episodes with account-wide daily protection."
 #include "Include/KTR/Core.mqh"
 #include "Include/KTR/Inputs.mqh"
@@ -184,7 +184,14 @@ void KTRProcessSignals()
 }
 int OnInit()
 {
+   PrintFormat("[KTR] BUILD KTR-1.01-20261102-H1-DIAGNOSTICS | program=%s | symbol=%s | chart=%s",
+      MQLInfoString(MQL_PROGRAM_PATH),_Symbol,EnumToString(_Period));
    if(!KTRValidate()) { Print("[KTR] Invalid numeric/enumerated inputs or account mode"); return INIT_PARAMETERS_INCORRECT; }
+   PrintFormat("[KTR] Contract/sizing: currency=%s equity=%.2f first_risk_percent=%.4f first_budget=%.2f volume_min=%.8f volume_step=%.8f volume_max=%.8f tick_size=%.8f point=%.8f stop_method=%s stop_ATR_TF=%s fractal_min_ATR=%.4f",
+      AccountInfoString(ACCOUNT_CURRENCY),AccountInfoDouble(ACCOUNT_EQUITY),First_Entry_Risk_Percent,
+      AccountInfoDouble(ACCOUNT_EQUITY)*First_Entry_Risk_Percent/100.0,
+      SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX),
+      SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE),_Point,EnumToString(SL_Method),EnumToString(ATR_Timeframe),Fractal_Min_Distance_ATR);
    ktr_lower_enabled=Enable_LowerTF_Entry && PeriodSeconds(Lower_Entry_Timeframe)>0 && PeriodSeconds(Lower_Entry_Timeframe)<PeriodSeconds(_Period);
    if(Enable_LowerTF_Entry && !ktr_lower_enabled) Print("[KTR] Lower-TF method disabled: timeframe must be strictly below chart");
    ktr_higher_enabled=First_Confirm_HigherTF || Additional_Confirm_HigherTF;

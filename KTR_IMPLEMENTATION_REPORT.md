@@ -1,4 +1,4 @@
-# KTR v1.0 implementation report
+# KTR v1.01 implementation report
 
 ## IMPLEMENTED
 
@@ -37,10 +37,14 @@ MT5 market orders are non-atomic; opposing submissions may execute unequally. Br
 
 ## Capacity-log follow-up
 
-Fixed a misleading rejection path that ran even when no order passed earlier gates. Genuine blocks now distinguish nonpositive daily baseline, daily-risk capacity, margin and unassessable existing exposure, with diagnostic amounts. Risk limits and baseline policy are unchanged. The original **112 pure checks** plus **21 broker-stubbed submission/reversal-control regressions** pass; the latter exercise the production submission function and verify message routing/numbers. See `tests/ktr/results/submission.txt`. MetaEditor and the reported native tester scenario remain NOT TESTED here.
+Fixed a misleading rejection path that ran even when no order passed earlier gates. Genuine blocks now distinguish nonpositive daily baseline, daily-risk capacity, margin and unassessable existing exposure, with diagnostic amounts. Risk limits and baseline policy are unchanged. The original **112 pure checks** plus **23 broker-stubbed submission/reversal-control regressions** pass; the latter exercise the production submission function and verify message routing/numbers. See `tests/ktr/results/submission.txt`. MetaEditor and the reported native tester scenario remain NOT TESTED here.
 
 ## Addition/reversal follow-up
 
-Added lifetime filled-addition cap (default 3, 0 unlimited), fresh-main-trigger gating (default ON), and full-post-fill-candle cooldown. Existing broker-history records preserve cap usage across closed additions/restart. Projected reversal logs now include calculation/confirmation times and SSA/SSB; direction skips, expiry, ownership/permission and volume blockers are explicit. Known closed sessions defer an unsubmitted trend-start candidate only inside its current signal bar; stale waits expire and rejected orders remain consumed. **112 pure + 21 broker-stubbed submission/reversal checks pass.** The user-supplied journal establishes that the prior build opened trades; revised MetaEditor compilation and MT5 replay remain NOT TESTED here. Legitimate stop, volume, risk, direction and broker rejections remain enforced.
+Added lifetime filled-addition cap (default 3, 0 unlimited), fresh-main-trigger gating (default ON), and full-post-fill-candle cooldown. Existing broker-history records preserve cap usage across closed additions/restart. Projected reversal logs now include calculation/confirmation times and SSA/SSB; direction skips, expiry, ownership/permission and volume blockers are explicit. Known closed sessions defer an unsubmitted trend-start candidate only inside its current signal bar; stale waits expire and rejected orders remain consumed. **112 pure + 23 broker-stubbed submission/reversal checks pass.** The user-supplied journal establishes that the prior build opened trades; revised MetaEditor compilation and MT5 replay remain NOT TESTED here. Legitimate stop, volume, risk, direction and broker rejections remain enforced.
 
-Tester first-day correction: only a verified initial funding record in an untruncated, balance-reconciled tester ledger seeds the simulation day's initial capital instead of subtracting it to zero. Live reconstruction and subsequent-day rules are unchanged. Four production calculation regressions cover funded/unfunded first day and later cash/day transitions. Current actual verification: **112 pure + 21 stubbed cases passed**; native MQL5 build/execution of these changes remains NOT TESTED.
+Tester first-day correction: only a verified initial funding record in an untruncated, balance-reconciled tester ledger seeds the simulation day's initial capital instead of subtracting it to zero. Live reconstruction and subsequent-day rules are unchanged. Four production calculation regressions cover funded/unfunded first day and later cash/day transitions. Current actual verification: **112 pure + 23 stubbed cases passed**; native MQL5 build/execution of these changes remains NOT TESTED.
+
+## Executable identification and H1 diagnostics (1.01)
+
+Added an explicit BUILD/path/symbol/timeframe banner and startup broker volume/stop/budget metadata. Stop rejection messages now identify the directional ATR/fractal/ZigZag/price/broker-distance failure; volume rejection includes BUY/SELL and the cash loss at broker minimum volume. Risk budgets and selected stop rules are unchanged. Standalone SELL and downward-reversal broker-stub cases pass, bringing the current evidence to **112 pure + 23 stubbed cases**. No native H1 execution, compilation or profit claim is made. Changes preserve the user's merged datetime-cast correction in Account.mqh.

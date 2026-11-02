@@ -36,7 +36,7 @@ enum { ACCOUNT_EQUITY,ACCOUNT_MARGIN_FREE,ACCOUNT_CURRENCY,POSITION_COMMENT,POSI
 double equity=10000,free_margin=10000,open_loss_value=100;
 bool exposure_known=true,confirm[2]={true,true},prepare[2]={true,true};
 double plan_loss[2]={200,200},plan_margin[2]={100,100};
-int account_reads=0,prepare_calls=0,exposure_calls=0,sends=0;
+int account_reads=0,prepare_calls=0,exposure_calls=0,sends=0,last_sent_direction=0;
 KTRMarket ktr_main,ktr_higher;
 bool ktr_reversing=false,managed_positions=false,managed_orders=false,session_open=true,send_accepted=true;
 int ktr_pending_direction=0,close_attempts=0;
@@ -60,7 +60,7 @@ bool KTRPrepare(KTRMarket&,int dir,bool,datetime,int,int,KTRPlan& plan) {
  plan.request.comment=dir>0?"buy":"sell"; return true;
 }
 bool KTROpenLoss(double& loss) { exposure_calls++; loss=open_loss_value; return exposure_known; }
-bool KTRSend(KTRPlan& plan) { sends++; ktr_intent[KTRIndex(plan.dir)].busy=send_accepted; return send_accepted; }
+bool KTRSend(KTRPlan& plan) { sends++; last_sent_direction=plan.dir; ktr_intent[KTRIndex(plan.dir)].busy=send_accepted; return send_accepted; }
 int PositionsTotal() { return 0; }
 ulong PositionGetTicket(int) { return 0; }
 string PositionGetString(int) { return ""; }
@@ -71,7 +71,7 @@ void KTRReconcileEpisodes(bool) {}
 void Reset() {
  ktr_reversing=false;managed_positions=false;managed_orders=false;session_open=true;send_accepted=true;
  ktr_pending_direction=0;ktr_pending_bar=0;ktr_pending_event=0;fake_main_bar=1000;close_attempts=0;Trade_Direction=TRADE_BOTH;
- logs.clear(); account_reads=0;prepare_calls=0;exposure_calls=0;sends=0;
+ logs.clear(); account_reads=0;prepare_calls=0;exposure_calls=0;sends=0;last_sent_direction=0;
  equity=10000;free_margin=10000;open_loss_value=100;exposure_known=true;
  ktr_day_balance=10000;ktr_daily_lock=false;ktr_liquidating=false;ktr_baseline_estimated=false;
  for(int i=0;i<2;i++) { ktr_intent[i].busy=false;ktr_episode[i].state=IDLE;
@@ -128,6 +128,11 @@ int main() {
  Reset();send_accepted=false;ktr_pending_direction=1;ktr_pending_bar=1000;
  KTRFinishReversal();send_accepted=true;KTRFinishReversal();
  Check(sends==1&&ktr_pending_direction==0,"broker-rejected first order not placed back into session wait");
+ Reset();Submit(false,true);
+ Check(sends==1&&last_sent_direction==-1,"standalone SELL candidate submits when BOTH directions are enabled");
+ Reset();ktr_pending_direction=-1;ktr_pending_bar=1000;
+ KTRFinishReversal();
+ Check(sends==1&&last_sent_direction==-1&&ktr_pending_direction==0,"downward reversal submits SELL in BOTH mode without a preceding BUY");
  std::cout<<"KTR stubbed submission: "<<pass<<" passed, "<<fail<<" failed\n";
  return fail?1:0;
 }
