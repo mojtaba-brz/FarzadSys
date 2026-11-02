@@ -8,6 +8,8 @@ ROOT=pathlib.Path(__file__).resolve().parents[2]
 base=runpy.run_path(str(ROOT/'tests/ktr/run_portable.py'))
 source=(ROOT/'Include/KTR/Execution.mqh').read_text()
 submission=source[source.index('void KTRSubmitCandidates('):source.rindex('#endif')]
+main_source=(ROOT/'Kumo_Trend_Rider.mq5').read_text()
+reversal=main_source[main_source.index('void KTRFinishReversal()'):main_source.index('void KTRProcessSignals()')]
 shim=base['shim']
 # Capture real production log formats, including actual diagnostic amounts.
 shim=shim.replace('void Print(const string& a,const string& b) { std::cout<<a<<b<<"\\n"; }',r'''
@@ -35,6 +37,19 @@ double equity=10000,free_margin=10000,open_loss_value=100;
 bool exposure_known=true,confirm[2]={true,true},prepare[2]={true,true};
 double plan_loss[2]={200,200},plan_margin[2]={100,100};
 int account_reads=0,prepare_calls=0,exposure_calls=0,sends=0;
+KTRMarket ktr_main,ktr_higher;
+bool ktr_reversing=false,managed_positions=false,managed_orders=false,session_open=true,send_accepted=true;
+int ktr_pending_direction=0,close_attempts=0;
+datetime ktr_pending_bar=0,ktr_pending_event=0,fake_main_bar=1000;
+string _Symbol="TEST"; int _Period=300;
+datetime iTime(const string&,int,int) { return fake_main_bar; }
+int PeriodSeconds(int tf) { return tf; }
+string TimeToString(datetime t) { return std::to_string(t); }
+void KTRWarn(const string& text) { Print(text); }
+void KTRCloseAll(bool) { close_attempts++; }
+bool KTRHasManagedPositions() { return managed_positions; }
+bool KTRAnyManagedOrder() { return managed_orders; }
+bool KTRTradeSessionOpen(const string&,bool& known) { known=true;return session_open; }
 int KTRIndex(int dir) { return dir>0?0:1; }
 double AccountInfoDouble(int prop) { account_reads++; return prop==ACCOUNT_EQUITY?equity:free_margin; }
 string AccountInfoString(int) { return "USD"; }
@@ -45,7 +60,7 @@ bool KTRPrepare(KTRMarket&,int dir,bool,datetime,int,int,KTRPlan& plan) {
  plan.request.comment=dir>0?"buy":"sell"; return true;
 }
 bool KTROpenLoss(double& loss) { exposure_calls++; loss=open_loss_value; return exposure_known; }
-bool KTRSend(KTRPlan& plan) { sends++; ktr_intent[KTRIndex(plan.dir)].busy=true; return true; }
+bool KTRSend(KTRPlan& plan) { sends++; ktr_intent[KTRIndex(plan.dir)].busy=send_accepted; return send_accepted; }
 int PositionsTotal() { return 0; }
 ulong PositionGetTicket(int) { return 0; }
 string PositionGetString(int) { return ""; }
@@ -54,6 +69,8 @@ bool KTRRefreshRecords() { return true; }
 void KTRReconcileIntents() {}
 void KTRReconcileEpisodes(bool) {}
 void Reset() {
+ ktr_reversing=false;managed_positions=false;managed_orders=false;session_open=true;send_accepted=true;
+ ktr_pending_direction=0;ktr_pending_bar=0;ktr_pending_event=0;fake_main_bar=1000;close_attempts=0;Trade_Direction=TRADE_BOTH;
  logs.clear(); account_reads=0;prepare_calls=0;exposure_calls=0;sends=0;
  equity=10000;free_margin=10000;open_loss_value=100;exposure_known=true;
  ktr_day_balance=10000;ktr_daily_lock=false;ktr_liquidating=false;ktr_baseline_estimated=false;
@@ -89,12 +106,34 @@ int main() {
  Check(sends==0&&LogHas("existing account exposure cannot be assessed"),"unassessable exposure has an explicit blocker");
  Reset();ktr_episode[0].state=ACTIVE;ktr_day_balance=0;Submit(true,false);
  Check(logs.empty()&&exposure_calls==0&&account_reads==0&&sends==0,"active episode's ignored first signal does not create capacity warning");
+ Reset();ktr_pending_direction=1;ktr_pending_bar=1000;ktr_pending_event=900;session_open=false;
+ KTRFinishReversal();
+ Check(sends==0&&ktr_pending_direction==1&&!ktr_reversing&&LogHas("waiting for broker trading session"),"known closed session defers unsubmitted first candidate within bar");
+ session_open=true;KTRFinishReversal();
+ Check(sends==1&&ktr_pending_direction==0,"session opens in eligible signal bar: first request submitted");
+ KTRFinishReversal();Check(sends==1,"deferred first entry cannot submit twice");
+ Reset();ktr_pending_direction=1;ktr_pending_bar=1000;fake_main_bar=1300;
+ KTRFinishReversal();Check(sends==0&&ktr_pending_direction==0&&LogHas("event expired"),"session wait cannot replay a stale main-bar event");
+ Reset();ktr_reversing=true;managed_positions=true;ktr_pending_direction=1;ktr_pending_bar=1000;
+ KTRFinishReversal();Check(sends==0&&ktr_reversing&&ktr_pending_direction==1,"first event waits until broker positions actually close");
+ fake_main_bar=1300;KTRFinishReversal();managed_positions=false;KTRFinishReversal();
+ Check(sends==0&&!ktr_reversing&&ktr_pending_direction==0&&LogHas("event expired"),"long close process expires first candidate while preserving closure barrier");
+ Reset();Trade_Direction=TRADE_BUY_ONLY;ktr_pending_direction=-1;ktr_pending_bar=1000;
+ KTRFinishReversal();Check(sends==0&&ktr_pending_direction==0&&LogHas("direction skipped"),"SELL reversal explains no BUY in BUY-only mode");
+ Reset();ktr_daily_lock=true;ktr_pending_direction=1;ktr_pending_bar=1000;
+ KTRFinishReversal();Check(sends==0&&ktr_pending_direction==0&&LogHas("daily liquidation lock"),"day lock consumes first candidate without session queue");
+ Reset();equity=9700;ktr_pending_direction=1;ktr_pending_bar=1000;
+ KTRFinishReversal();equity=10000;KTRFinishReversal();
+ Check(sends==0&&ktr_pending_direction==0&&LogHas("Daily-risk rejection"),"risk-rejected first candidate never retried when equity later recovers");
+ Reset();send_accepted=false;ktr_pending_direction=1;ktr_pending_bar=1000;
+ KTRFinishReversal();send_accepted=true;KTRFinishReversal();
+ Check(sends==1&&ktr_pending_direction==0,"broker-rejected first order not placed back into session wait");
  std::cout<<"KTR stubbed submission: "<<pass<<" passed, "<<fail<<" failed\n";
  return fail?1:0;
 }
 '''
 with tempfile.TemporaryDirectory(prefix='ktr-submission-') as tmp:
     cpp=pathlib.Path(tmp)/'submission.cpp';exe=pathlib.Path(tmp)/'submission'
-    cpp.write_text(shim+base['adapt']((ROOT/'Include/KTR/Core.mqh').read_text()+(ROOT/'Include/KTR/Recovery.mqh').read_text())+stubs+submission+cases)
+    cpp.write_text(shim+base['adapt']((ROOT/'Include/KTR/Core.mqh').read_text()+(ROOT/'Include/KTR/Recovery.mqh').read_text())+stubs+submission+reversal+cases)
     subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)

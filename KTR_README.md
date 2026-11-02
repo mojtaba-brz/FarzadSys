@@ -1,6 +1,6 @@
 # Kumo Trend Rider v1.0
 
-**IMPLEMENTED — source implementation.** **TESTED — 84 portable assertions on production calculation/recovery bodies, plus source preservation checks.** **NOT TESTED — MetaEditor compilation, native scripts, broker execution, Strategy Tester, visual rendering or profitability.** See [test evidence](tests/ktr/results/portable.txt) and [acceptance plan](KTR_TEST_PLAN.md). This is an independent EA; existing RSI Pull Up sources and documentation are unchanged.
+**IMPLEMENTED — source implementation.** **TESTED — 112 portable assertions on production calculation/recovery bodies, plus source preservation checks.** **NOT TESTED — MetaEditor compilation, native scripts, broker execution, Strategy Tester, visual rendering or profitability.** See [test evidence](tests/ktr/results/portable.txt) and [acceptance plan](KTR_TEST_PLAN.md). This is an independent EA; existing RSI Pull Up sources and documentation are unchanged.
 
 ## Installation and scope
 
@@ -31,7 +31,7 @@ The principal configuration is fixed at **9/26/52 with 26-bar displacement**, av
 
 Projected SSA > SSB means upward, SSA < SSB downward. Neutral preserves the most recent non-neutral direction but suppresses all entries. Price/cloud confirmation uses SSA/SSB **26 calculation bars earlier**, representing the cloud actually displayed at the completed candle. It never changes trend identification.
 
-First entry can be Trend Start, Shape Similarity or Either. First attachment only seeds history and waits for new events. An opposite non-neutral projected cloud closes both existing directional episodes; no position is closed just because the cloud becomes equal. An immediate post-closure trend-start candidate is retained only while the main signal bar remains current. Offline reversals are checked against the original first execution, including intervening reversals that subsequently reversed back. Insufficient reversal history blocks additions to the affected episode.
+First entry can be Trend Start, Shape Similarity or Either. First attachment only seeds history and waits for new events. An opposite non-neutral projected cloud closes both existing directional episodes; no position is closed just because the cloud becomes equal. An immediate post-closure trend-start candidate is retained only while the main signal bar remains current. A known closed broker trading session defers its initial submission within that same bar, serviced by ticks and timer. The next main bar expires it even while closures/session wait continue. Risk-rejected and broker-rejected orders are never requeued. Session checks use SymbolInfoSessionTrade, server weekday and time of day including previous-day overnight carry. Missing session metadata falls back to broker preflight; schedules cannot guarantee execution on holidays or unexpected closures. Offline reversals are checked against the original first execution, including intervening reversals that subsequently reversed back. Insufficient reversal history blocks additions to the affected episode.
 
 Shape similarity pairs Tenkan/SSA and Kijun/SSA independently. Valleys buy and peaks sell regardless of projected color. Approximate plateaus are single extrema, with their last bar as the canonical pivot. Left and right neighborhoods must be beyond the plateau tolerance. Confirmation occurs only when all right bars of **both** extrema have closed. Windows end at each extremum's own confirmation and are aligned using pivot lag; normalized first differences supply cosine similarity, and both line ranges must exceed the configured ATR amplitude. Zero-norm windows are rejected.
 
@@ -39,7 +39,7 @@ Plateau membership uses a **fixed fraction of trading tick size**, rather than a
 
 ## Additional methods and filters
 
-All additional methods default OFF for a first-entry-only benchmark. Their triggers are OR-ed; a merged bit mask retains the components. Main-timeframe methods take precedence over a coincident lower-timeframe event for each direction. One position per direction/decision is considered, and the completed-main-bar cooldown spans all methods. A new episode cannot receive an addition on its creating main bar, even when cooldown is zero. Rejected/ignored events are consumed; there is no queue.
+All additional methods default OFF for a first-entry-only benchmark. Their triggers are OR-ed; a merged bit mask retains the components. Main-timeframe methods take precedence over a coincident lower-timeframe event for each direction. With `Additional_Require_Fresh_Main_Trigger=true`, each method must turn false before its condition can trigger again. Persistent main-TF touch/rejection conditions do not add every candle; independently confirmed lower-TF events remain separate. One position per direction/decision is considered, and the completed-main-bar cooldown spans all methods and excludes the partial candle containing a mid-candle fill. A new episode cannot receive an addition on its creating main bar, even when cooldown is zero. `Max_Additional_Entries_Per_Episode=3` caps lifetime filled additions per directional episode; closed additions still count, and restart reconstructs the count from broker history. Set 0 for unlimited legacy behavior. Rejected requests do not consume filled-addition slots. Rejected/ignored events are consumed; there is no queue.
 
 | Method | Closed-candle implementation |
 | --- | --- |
@@ -159,7 +159,9 @@ Defaults below are literal MQL5 input values. ATR units use the closed relevant 
 | `Enable_Tenkan_Kijun_Cross` | `false` |  |
 | `Enable_Flat_SSB_Bounce` | `false` |  |
 | `Enable_Kijun_Rejection` | `false` |  |
-| `Additional_Entry_Cooldown_Main_Bars` | `1` |  |
+| `Additional_Entry_Cooldown_Main_Bars` | `1` | Full post-fill main candles; partial fill candle excluded |
+| `Max_Additional_Entries_Per_Episode` | `3` | Filled lifetime additions; 0 restores unlimited |
+| `Additional_Require_Fresh_Main_Trigger` | `true` | Each main method rearms after becoming false |
 | `Kijun_Touch_ATR` | `0.15` |  |
 | `Kijun_Rejection_Min_WickBody` | `1.5` |  |
 
@@ -263,11 +265,21 @@ The original combined `Candidate risk/margin exceeds shared capacity` message di
 
 For viable proposed orders, diagnostics distinguish:
 
-- `Entry blocked: nonpositive daily opening balance`: prints reconstructed `B_day`, equity, currency and baseline completeness. The first tester/account funding booked after midnight may reverse-reconstruct that day's opening balance as zero. This is not a margin failure. The EA does not invent a positive midnight balance or relax the daily limit; the next broker day can have a positive reconstructed baseline.
+- `Entry blocked: nonpositive daily opening balance`: prints reconstructed `B_day`, equity, currency and baseline completeness. The original tester first-day initial-funding subtraction was corrected: a verified positive first funding record from a fully reconciled tester ledger supplies initial simulation capital. Unknown/truncated or live-account history does not receive this exception. A remaining zero baseline still blocks trading; it is not a margin failure.
 - `Daily-risk rejection`: prints opening balance, current equity, all-account remaining SL exposure, proposed risk (combined for a pair), projected worst equity, required minimum equity, projected daily risk, configured limit and baseline completeness.
 - `Margin rejection`: prints required/free margin, proposed BUY/SELL volumes and account currency.
 - Unassessable existing account exposure: explicitly identifies the exposure-assessment gate instead of silently skipping.
 
-A legacy message alone cannot establish which limit rejected a real trade. Recompile the updated main file with its updated include files and collect the detailed Journal line. This change preserves risk percentages, volume sizing, daily baselines and joint-order rejection policy.
+A legacy message alone cannot establish which limit rejected a real trade. Recompile the updated main file with its updated include files and collect the detailed Journal line. The diagnostic change preserves risk percentages, volume sizing and joint-order rejection policy; the subsequent verified tester-initial-funding correction is documented separately below.
 
-`python3 -u tests/ktr/run_submission.py` runs the existing 84 pure checks and 11 additional cases against the **actual production submission function** using explicit broker/indicator stubs. This verifies candidate gating, rejection routing, diagnostic amounts and retained joint-risk behavior; it is not MT5 execution evidence. Output: `tests/ktr/results/submission.txt`.
+`python3 -u tests/ktr/run_submission.py` runs the 112 pure checks and 21 additional cases against the **actual production submission function** using explicit broker/indicator stubs. This verifies candidate gating, rejection routing, diagnostic amounts, joint risk and bounded closure/session waiting; it is not MT5 execution evidence. Output: `tests/ktr/results/submission.txt`.
+
+## Reversal and addition diagnostics
+
+Startup logs entry direction/method, addition cap, fresh gating and full-bar cooldown. Each projected reversal logs calculation time, confirmation bar and raw SSA/SSB. FIRST direction-policy skips, event expiry, ownership/request/permission blockers, unavailable stops and below-minimum volume are explicit. A red reversal closes managed positions in BUY-only mode but does not open a SELL or a new BUY. Compare the logged **forward calculation cloud**, not the cloud currently displayed beneath price. No protective checks are bypassed to force an entry.
+
+The revised defaults respond to excessive pyramiding: lifetime cap 3 and fresh-main-trigger gating ON. To compare legacy unlimited repeated-condition behavior, set cap 0 and fresh gating false; cooldown still counts full post-fill candles. These settings intentionally change additions and require a native rerun. A signal held by a known closed session is unsubmitted and only eligible within its existing main signal bar; subsequent bars, risk rejection or server rejection consume it without stale replay.
+
+## Verified tester initial capital
+
+On the first simulated day, MT5 books starting capital as a balance deal. Subtracting that initial funding as though it were an ordinary intraday deposit made the prior build reconstruct a zero day baseline and reject valid first-day entries. In tester mode only, an untruncated, fully balance-reconciled ledger whose first record is positive initial balance funding on this server day now reconstructs `B_day = current balance - day balance movements + verified initial funding`. Later deposits, withdrawals and trading P&L are still excluded from changing that baseline; subsequent days use ordinary reverse reconstruction. The source initial-funding amount is logged explicitly. This does not use the optional P&L override, guess missing balances, change live-account reconstruction or relax the daily risk cap. Missing/unverified initial capital still blocks rather than being invented.

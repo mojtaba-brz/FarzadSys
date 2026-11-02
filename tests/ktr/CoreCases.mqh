@@ -109,6 +109,35 @@ void KTRRunCoreCases()
    // Mutating only data beyond an earlier feature confirmation must not alter that feature.
    double changed[]={5,4,3,2,1,2,3,999,1000}; KTRFeatures(changed,2,2,0,p);
    KTRAssert(ArraySize(p)>0 && p[0].pivot==4 && p[0].confirmation==6,"shape prefix invariant under future changes");
+   KTRAssert(KTRAdditionCapAllows(1,3),"first position leaves three addition slots");
+   KTRAssert(KTRAdditionCapAllows(3,3),"two executed additions allow the third");
+   KTRAssert(!KTRAdditionCapAllows(4,3),"three filled additions reach lifetime cap");
+   KTRAssert(!KTRAdditionCapAllows(10,3),"closed earlier additions do not replenish cap");
+   KTRAssert(KTRAdditionCapAllows(100,0),"zero cap explicitly restores unlimited behavior");
+   int previous=0;
+   KTRAssert(KTRFreshAdditionalMask(16,previous,true)==16,"first pullback condition is fresh");
+   KTRAssert(KTRFreshAdditionalMask(16,previous,true)==0,"continuing pullback cannot add each bar");
+   KTRAssert(KTRFreshAdditionalMask(80,previous,true)==64,"new flat-SSB method independent of persistent pullback");
+   KTRAssert(KTRFreshAdditionalMask(0,previous,true)==0 && KTRFreshAdditionalMask(16,previous,true)==16,"false condition rearms pullback");
+   KTRAssert(KTRFreshAdditionalMask(16,previous,false)==16,"fresh-only input OFF restores condition behavior");
+   KTRAssert(!KTRAdditionCooldownAllows(1,false,1),"09:29 fill cannot add at 09:30 M5 boundary");
+   KTRAssert(KTRAdditionCooldownAllows(2,false,1),"09:29 fill may add after complete 09:30-09:35 candle");
+   KTRAssert(KTRAdditionCooldownAllows(1,true,1),"fill at 09:25 opening completes one full candle at 09:30");
+   KTRAssert(!KTRAdditionCooldownAllows(3,false,3) && KTRAdditionCooldownAllows(4,false,3),"multi-bar cooldown excludes partial fill candle");
+   KTRAssert(KTRAdditionCooldownAllows(0,false,0),"zero cooldown disables delay");
+   KTRAssert(!KTRAdditionCooldownAllows(-1,false,1),"missing fill-bar history blocks cooldown");
+   KTRAssert(!KTRSessionContains(3660,3720,86340,false),"01:01 is before a 01:02 trading session");
+   KTRAssert(KTRSessionContains(3720,3720,86340,false),"session beginning inclusive");
+   KTRAssert(!KTRSessionContains(86340,3720,86340,false),"session end exclusive");
+   KTRAssert(KTRSessionContains(23*3600,22*3600,2*3600,false),"overnight session same-day late segment");
+   KTRAssert(KTRSessionContains(3600,22*3600,2*3600,true),"overnight session previous-day carry");
+   KTRAssert(!KTRSessionContains(3600,22*3600,2*3600,false),"today's evening session cannot open this morning");
+   KTRAssert(!KTRSessionContains(3*3600,22*3600,2*3600,true),"previous overnight session expired");
+   KTRAssert(KTRSessionContains(100,0,0,false) && !KTRSessionContains(100,0,0,true),"full-day session belongs to current day only");
+   KTRAssert(KTRNear(KTRDailyBalance(1000,1000,1000),1000),"verified tester initial deposit provides first-day starting baseline");
+   KTRAssert(KTRNear(KTRDailyBalance(1220,1220,1000),1000),"later same-day deposit and trading result do not change initial tester baseline");
+   KTRAssert(KTRNear(KTRDailyBalance(980,-20,0),1000),"subsequent server day reconstructs normal opening balance");
+   KTRAssert(KTRDailyBalance(1000,1000,0)==0,"no verified initial tester funding cannot invent positive baseline");
    PrintFormat("KTR core: %d passed, %d failed",ktr_pass,ktr_fail);
 }
 #endif

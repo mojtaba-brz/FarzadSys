@@ -13,6 +13,7 @@ bool ktr_lower_enabled=false,ktr_higher_enabled=false,ktr_bootstrapped=false,ktr
 datetime ktr_main_bar=0,ktr_lower_bar=0,ktr_higher_bar=0;
 int ktr_pending_direction=0;
 datetime ktr_pending_bar=0,ktr_pending_event=0;
+int ktr_previous_main_trigger[2];
 string ktr_last_warning="";
 void KTRWarn(const string text)
 { if(ktr_last_warning!=text) { Print("[KTR] ",text); ktr_last_warning=text; } }
@@ -28,6 +29,7 @@ bool KTRValidate()
    if(Shape_Window_Bars<3 || Shape_Window_Bars>500 || Shape_Max_Lag_Bars<0 || Shape_Max_Lag_Bars>100 ||
       Shape_Pivot_Left_Bars<1 || Shape_Pivot_Left_Bars>100 || Shape_Pivot_Right_Bars<1 || Shape_Pivot_Right_Bars>100 ||
       Additional_Entry_Cooldown_Main_Bars<0 || Additional_Entry_Cooldown_Main_Bars>100000 ||
+      Max_Additional_Entries_Per_Episode<0 || Max_Additional_Entries_Per_Episode>10000 ||
       Flat_SSB_Min_Bars<2 || Flat_SSB_Min_Bars>500 || Flat_SSB_Max_Age_Bars<Flat_SSB_Min_Bars || Flat_SSB_Max_Age_Bars>10000 ||
       SR_Min_Touches<2 || SR_Min_Touches>100 || SR_Min_Touch_Separation<1 || SR_Min_Touch_Separation>1000 ||
       SR_Lookback_Bars<10 || SR_Lookback_Bars>10000 ||
@@ -79,6 +81,8 @@ bool KTRBootstrap()
    KTRReconcileEpisodes(ktr_reversing);
    if(!ktr_main.Load(KTRHistoryNeeded())) return false;
    ktr_main_bar=iTime(_Symbol,_Period,0); KTRSeedShapeHistory(ktr_main);
+   ktr_previous_main_trigger[0]=KTRAdditionalMethods(ktr_main,1);
+   ktr_previous_main_trigger[1]=KTRAdditionalMethods(ktr_main,-1);
    if(ktr_lower_enabled) { ktr_lower.Load(MathMax(500,Shape_Window_Bars+Shape_Max_Lag_Bars+200)); KTRSeedShapeHistory(ktr_lower); ktr_lower_bar=iTime(_Symbol,Lower_Entry_Timeframe,0); }
    if(ktr_higher_enabled) { ktr_higher.Load(200); ktr_higher_bar=iTime(_Symbol,Higher_Confirmation_Timeframe,0); }
    // Bootstrap never emits historical entries. Offline reversals still require exit.
@@ -87,12 +91,29 @@ bool KTRBootstrap()
 }
 void KTRFinishReversal()
 {
-   if(!ktr_reversing) return;
-   KTRCloseAll(false); KTRReconcileIntents();
-   if(KTRHasManagedPositions() || KTRAnyManagedOrder() || ktr_intent[0].busy || ktr_intent[1].busy) return;
-   ktr_reversing=false; KTRReconcileEpisodes(false);
-   int dir=ktr_pending_direction; ktr_pending_direction=0;
-   if(dir==0 || ktr_pending_bar!=iTime(_Symbol,_Period,0) || ktr_daily_lock || ktr_liquidating) return;
+   if(!ktr_reversing && ktr_pending_direction==0) return;
+   if(ktr_pending_direction!=0 && ktr_pending_bar!=iTime(_Symbol,_Period,0))
+   {
+      PrintFormat("[KTR] FIRST trend event expired: direction=%s event=%s; closing/session wait exceeded its main signal bar",
+         ktr_pending_direction>0?"BUY":"SELL",TimeToString(ktr_pending_event));
+      ktr_pending_direction=0;
+   }
+   if(ktr_reversing)
+   {
+      KTRCloseAll(false); KTRReconcileIntents();
+      if(KTRHasManagedPositions() || KTRAnyManagedOrder() || ktr_intent[0].busy || ktr_intent[1].busy) return;
+      ktr_reversing=false; KTRReconcileEpisodes(false);
+   }
+   int dir=ktr_pending_direction;
+   if(dir==0) return;
+   if(ktr_daily_lock || ktr_liquidating) { ktr_pending_direction=0; Print("[KTR] FIRST trend event blocked by daily liquidation lock"); return; }
+   if((dir>0 && Trade_Direction==TRADE_SELL_ONLY) || (dir<0 && Trade_Direction==TRADE_BUY_ONLY))
+   { ktr_pending_direction=0; Print("[KTR] FIRST trend direction skipped by Trade_Direction setting"); return; }
+   bool session_known=false;
+   if(!KTRTradeSessionOpen(_Symbol,session_known))
+   { KTRWarn("FIRST trend event waiting for broker trading session within its current main signal bar"); return; }
+   // Not a rejected order queue: no submission has occurred while the session is closed.
+   ktr_pending_direction=0;
    KTRSubmitCandidates(ktr_main,ktr_higher,dir>0,dir<0,true,ktr_pending_event,ktr_pending_event,1,1,PeriodSeconds(_Period));
 }
 void KTRProcessSignals()
@@ -103,10 +124,13 @@ void KTRProcessSignals()
    datetime main_bar=iTime(_Symbol,_Period,0),lower_bar=ktr_lower_enabled?iTime(_Symbol,Lower_Entry_Timeframe,0):0;
    bool new_main=main_bar>ktr_main_bar,new_lower=ktr_lower_enabled && lower_bar>ktr_lower_bar;
    if(!new_main && !new_lower) return;
+   int main_buy_mask=0,main_sell_mask=0;
    if(new_main)
    {
       if(!ktr_main.Load(KTRHistoryNeeded())) { KTRWarn("Main closed indicators unavailable; awaiting synchronized data"); return; }
       ktr_main_bar=main_bar;
+      main_buy_mask=KTRFreshAdditionalMask(KTRAdditionalMethods(ktr_main,1),ktr_previous_main_trigger[0],Additional_Require_Fresh_Main_Trigger);
+      main_sell_mask=KTRFreshAdditionalMask(KTRAdditionalMethods(ktr_main,-1),ktr_previous_main_trigger[1],Additional_Require_Fresh_Main_Trigger);
    }
    if(ktr_higher_enabled && (iTime(_Symbol,Higher_Confirmation_Timeframe,0)!=ktr_higher_bar || !ktr_higher.ready))
    { if(ktr_higher.Load(200)) ktr_higher_bar=iTime(_Symbol,Higher_Confirmation_Timeframe,0); else ktr_higher.ready=false; }
@@ -115,6 +139,9 @@ void KTRProcessSignals()
    bool reversal=new_main && (ktr_main.LatestReversal()!=0 || offline_reversal);
    if(reversal)
    {
+      int at=ktr_main.Last();
+      PrintFormat("[KTR] Projected-cloud reversal: direction=%s calculation=%s confirmed_bar=%s SSA=%.*f SSB=%.*f offline_exit=%s",
+         ktr_main.Direction()>0?"BUY":ktr_main.Direction()<0?"SELL":"NEUTRAL",TimeToString(ktr_main.bars[at].time),TimeToString(main_bar),_Digits,ktr_main.ssa[at],_Digits,ktr_main.ssb[at],offline_reversal?"true":"false");
       ktr_reversing=true; ktr_pending_direction=0;
       KTRSignal consumed; KTRFirstSignals(ktr_main,consumed);
       if(ktr_main.LatestReversal()!=0 && First_Entry_Method!=FIRST_SHAPE_SIMILARITY)
@@ -135,7 +162,7 @@ void KTRProcessSignals()
    int bm=0,sm=0; datetime be=0,se=0;
    if(new_main)
    {
-      bm=KTRAdditionalMethods(ktr_main,1); sm=KTRAdditionalMethods(ktr_main,-1);
+      bm=main_buy_mask; sm=main_sell_mask;
       be=ktr_main.bars[ktr_main.Last()].time; se=be;
    }
    // Main-TF methods take precedence over lower-TF methods at a coincident decision.
@@ -169,6 +196,8 @@ int OnInit()
    if(ktr_stop_atr==INVALID_HANDLE || ktr_fractals==INVALID_HANDLE) return INIT_FAILED;
    ktr_panel_prefix="KTR."+(string)ChartID()+"."+(string)Magic_Number+".";
    Print("[KTR] Dedicated account: emergency limit closes ALL account positions and cancels ALL pending orders. One KTR instance per account required.");
+   PrintFormat("[KTR] Entry policy: direction=%s first_method=%s max_additions=%d fresh_main_trigger=%s cooldown_full_main_bars=%d",
+      EnumToString(Trade_Direction),EnumToString(First_Entry_Method),Max_Additional_Entries_Per_Episode,Additional_Require_Fresh_Main_Trigger?"true":"false",Additional_Entry_Cooldown_Main_Bars);
    KTRRefreshRecords(); KTRReconcileIntents(); KTRAccountUpdate(); KTRBootstrap();
    if(!EventSetTimer(1)) return INIT_FAILED;
    return INIT_SUCCEEDED;
@@ -181,7 +210,7 @@ void OnTick()
 void OnTimer()
 {
    KTRAccountUpdate(); KTRReconcileIntents(); KTRReconcileEpisodes(ktr_reversing || ktr_liquidating);
-   if(ktr_reversing && !ktr_liquidating) KTRFinishReversal();
+   if((ktr_reversing || ktr_pending_direction!=0) && !ktr_liquidating) KTRFinishReversal();
    if(!ktr_bootstrapped) KTRBootstrap();
    KTRHistoricalWork(); KTRPanel();
 }
