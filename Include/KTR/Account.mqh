@@ -74,7 +74,7 @@ void KTRLoadAccountHistory(const bool reset)
       double equity=AccountInfoDouble(ACCOUNT_EQUITY);
       ktr_day_min=equity; ktr_overall_min=equity-later_cash;
       ktr_replay_now=TimeCurrent();
-      ktr_older_start=MathMax(first_time,ktr_replay_now-(long)Equity_History_Days*86400);
+      ktr_older_start=(datetime)MathMax(first_time,ktr_replay_now-(long)Equity_History_Days*86400);
       // Reconstruct today's risk latch first, then older account-performance samples.
       ktr_sample_time=MathMax(ktr_day,ktr_older_start); ktr_sample_end=ktr_replay_now;
       ktr_replay_daily_phase=true; ktr_replay_initial_removed=false; ktr_replay_valid=true;
