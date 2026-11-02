@@ -1,0 +1,118 @@
+PASS first known trend is not a reversal
+PASS neutral preserves prior direction
+PASS opposite nonneutral reverses
+PASS same direction not repeated
+PASS neutral bridge reversal
+PASS equal cloud neutral
+PASS empty episode idle
+PASS positive first remains active
+PASS first fully closed suspends additions
+PASS unresolved closing retains lock
+PASS partial first closure remains active
+PASS normalized scale invariant shape
+PASS opposite shape rejected
+PASS degenerate vector rejected
+PASS window bounds protected
+PASS amplitude range
+PASS valley feature
+PASS peak feature
+PASS right-candle causal confirmation
+PASS matching confirmed valleys
+PASS extremum types must match
+PASS ATR movement floor rejects small shape
+PASS matching peaks pass
+PASS allowed one-bar lag aligns local differences
+PASS same extremum with low shape similarity rejected
+PASS excessive lag rejected
+PASS one event per plateau
+PASS plateau last-bar canonical identity
+PASS insufficient completed right bars produce no feature
+PASS approximate plateau tolerance
+PASS buy Kijun pullback
+PASS sell Kijun pullback
+PASS no invented touch
+PASS close equal to level rejected
+PASS bullish rejection wick
+PASS bearish rejection wick
+PASS doji rejection safe
+PASS pullback is not automatically rejection
+PASS bullish crossover
+PASS bearish crossover
+PASS previous equality crosses
+PASS current equality no crossover
+PASS base index one
+PASS first addition fixed reduction
+PASS geometric reduction
+PASS full reduction disables additions
+PASS conditional trend-end probability
+PASS empty hazard sample fallback
+PASS budget-based volume
+PASS volume rounds down
+PASS minimum volume never rounded up
+PASS volume maximum respected
+PASS invalid volume step rejected
+PASS four percent projected exposure allowed
+PASS existing equity deficit included
+PASS exact daily cap allowed
+PASS cap breach rejected
+PASS unknown baseline blocks entries
+PASS buy tick stop rounds outward
+PASS sell tick stop rounds outward
+PASS causal ZigZag major swings found
+PASS top confirmation delayed by Backstep
+PASS valley confirmation delayed
+PASS confirmed ZigZag prefix invariance / no future mutation
+PASS shape prefix invariant under future changes
+PASS first position leaves three addition slots
+PASS two executed additions allow the third
+PASS three filled additions reach lifetime cap
+PASS closed earlier additions do not replenish cap
+PASS zero cap explicitly restores unlimited behavior
+PASS first pullback condition is fresh
+PASS continuing pullback cannot add each bar
+PASS new flat-SSB method independent of persistent pullback
+PASS false condition rearms pullback
+PASS fresh-only input OFF restores condition behavior
+PASS 09:29 fill cannot add at 09:30 M5 boundary
+PASS 09:29 fill may add after complete 09:30-09:35 candle
+PASS fill at 09:25 opening completes one full candle at 09:30
+PASS multi-bar cooldown excludes partial fill candle
+PASS zero cooldown disables delay
+PASS missing fill-bar history blocks cooldown
+PASS 01:01 is before a 01:02 trading session
+PASS session beginning inclusive
+PASS session end exclusive
+PASS overnight session same-day late segment
+PASS overnight session previous-day carry
+PASS today's evening session cannot open this morning
+PASS previous overnight session expired
+PASS full-day session belongs to current day only
+PASS verified tester initial deposit provides first-day starting baseline
+PASS later same-day deposit and trading result do not change initial tester baseline
+PASS subsequent server day reconstructs normal opening balance
+PASS no verified initial tester funding cannot invent positive baseline
+PASS BUY deviation reserves higher entry
+PASS SELL unsigned deviation reserves lower entry
+KTR core: 95 passed, 0 failed
+PASS broker metadata length fits
+PASS compact metadata roundtrip
+PASS truncated metadata rejected
+PASS invalid role rejected
+PASS invalid episode rejected
+PASS zero timeframe rejected
+PASS overflowing metadata rejected
+PASS independent BUY and SELL episodes coexist
+PASS broker first identifier and addition count reconstructed
+PASS partial original position close stays active
+PASS SL/manual first close with remaining addition suspends
+PASS cooldown and original execution recovered
+PASS final addition closure yields idle
+PASS unrecoverable live ownership cannot invent idle
+PASS missing original opening history blocks episode
+PASS two BUY episode identities cannot overlap
+PASS two SELL episode identities cannot overlap
+PASS unavailable broker history prevents new orders
+PASS reversal forces closing state before further entries
+KTR combined: 114 passed, 0 failed
+PASS static: no KTR persistence APIs; balanced source braces
+PASS preservation: all six existing tracked EA/docs/modules byte-for-byte unchanged
