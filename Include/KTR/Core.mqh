@@ -100,8 +100,28 @@ double KTRFloorVolume(const double budget,const double loss_per_lot,const double
 }
 bool KTRRiskFits(const double balance,const double equity,const double open_loss,const double new_loss,const double percent)
 { return balance>0 && equity>0 && open_loss>=0 && new_loss>=0 && equity-open_loss-new_loss>=balance*(1-percent/100.0); }
+double KTRDailyBalance(const double current_balance,const double day_movements,const double verified_tester_funding)
+{ return current_balance-day_movements+verified_tester_funding; }
 double KTRRoundStop(const double level,const double tick,const int dir)
 { if(tick<=0) return 0; return (dir>0?MathFloor(level/tick):MathCeil(level/tick))*tick; }
+bool KTRAdditionCapAllows(const int executed_entries,const int max_additions)
+{ return max_additions==0 || MathMax(0,executed_entries-1)<max_additions; }
+int KTRFreshAdditionalMask(const int raw,int &previous,const bool require_fresh)
+{ int result=require_fresh?(raw & ~previous):raw; previous=raw; return result; }
+bool KTRAdditionCooldownAllows(const int fill_bar_shift,const bool filled_at_bar_open,const int cooldown)
+{
+   if(cooldown==0) return true;
+   if(fill_bar_shift<0) return false;
+   // A partial fill candle is not a complete post-entry main candle.
+   return fill_bar_shift-(filled_at_bar_open?0:1)>=cooldown;
+}
+// Session times are seconds-of-day. Full-day windows may be returned as 0/0.
+bool KTRSessionContains(const int seconds,const int from,const int to,const bool previous_day)
+{
+   if(from==to) return previous_day?seconds<from:seconds>=from;
+   if(from<to) return !previous_day && seconds>=from && seconds<to;
+   return previous_day?seconds<to:seconds>=from;
+}
 struct KTRSwing { int pivot; int confirmation; int kind; double price; datetime pivot_time; datetime confirmed_at; };
 struct KTRZigState
 {

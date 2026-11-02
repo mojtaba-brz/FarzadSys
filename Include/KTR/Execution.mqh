@@ -93,21 +93,63 @@ bool KTRTradingPermitted()
    return TerminalInfoInteger(TERMINAL_CONNECTED) && TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) &&
           MQLInfoInteger(MQL_TRADE_ALLOWED) && AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) && AccountInfoInteger(ACCOUNT_TRADE_EXPERT);
 }
+bool KTRTradeSessionOpen(const string symbol,bool &known)
+{
+   known=false;
+   datetime now=MQLInfoInteger(MQL_TESTER)?TimeCurrent():(TimeTradeServer()>0?TimeTradeServer():TimeCurrent());
+   MqlDateTime clock; TimeToStruct(now,clock);
+   int seconds=clock.hour*3600+clock.min*60+clock.sec;
+   for(int offset=0;offset<=1;offset++)
+   {
+      ENUM_DAY_OF_WEEK day=(ENUM_DAY_OF_WEEK)((clock.day_of_week+7-offset)%7);
+      for(uint index=0;index<32;index++)
+      {
+         datetime from,to;
+         if(!SymbolInfoSessionTrade(symbol,day,index,from,to)) break;
+         known=true; MqlDateTime a,b; TimeToStruct(from,a); TimeToStruct(to,b);
+         if(KTRSessionContains(seconds,a.hour*3600+a.min*60+a.sec,b.hour*3600+b.min*60+b.sec,offset==1)) return true;
+      }
+   }
+   // Distinguish a closed day from a broker that exposes no session table at all.
+   if(!known)
+      for(int day=0;day<7;day++)
+      { datetime from,to; if(SymbolInfoSessionTrade(symbol,(ENUM_DAY_OF_WEEK)day,0,from,to)) { known=true; break; } }
+   return !known; // unknown table: broker preflight/execution remains authoritative
+}
 bool KTRPrepare(KTRMarket &m,const int dir,const bool first,const datetime event,const int method,const int event_tf,KTRPlan &p)
 {
    int j=KTRIndex(dir);
-   if(ktr_daily_lock || ktr_liquidating || !KTRTradingPermitted() || ktr_episode[j].blocked || ktr_intent[j].busy) return false;
+   if(ktr_daily_lock || ktr_liquidating || ktr_episode[j].blocked || ktr_intent[j].busy)
+   {
+      PrintFormat("[KTR] %s candidate blocked: daily_lock=%s liquidating=%s ownership_blocked=%s request_busy=%s",
+         first?"FIRST":"ADDITION",ktr_daily_lock?"true":"false",ktr_liquidating?"true":"false",ktr_episode[j].blocked?"true":"false",ktr_intent[j].busy?"true":"false");
+      return false;
+   }
+   if(!KTRTradingPermitted())
+   {
+      PrintFormat("[KTR] Candidate blocked by permissions: connected=%d terminal_trade=%d program_trade=%d account_trade=%d account_expert=%d tester=%d",
+         TerminalInfoInteger(TERMINAL_CONNECTED),TerminalInfoInteger(TERMINAL_TRADE_ALLOWED),MQLInfoInteger(MQL_TRADE_ALLOWED),
+         AccountInfoInteger(ACCOUNT_TRADE_ALLOWED),AccountInfoInteger(ACCOUNT_TRADE_EXPERT),MQLInfoInteger(MQL_TESTER));
+      return false;
+   }
    if(Trade_Direction==TRADE_BUY_ONLY && dir<0) return false;
    if(Trade_Direction==TRADE_SELL_ONLY && dir>0) return false;
    if(first?ktr_episode[j].state!=IDLE:ktr_episode[j].state!=ACTIVE) return false;
    if(KTRSeen(dir,event,event_tf)) return false;
    if(!first)
    {
+      if(!KTRAdditionCapAllows(ktr_episode[j].entries,Max_Additional_Entries_Per_Episode))
+      { PrintFormat("[KTR] ADDITION blocked: episode=%I64d filled_additions=%d limit=%d",ktr_episode[j].id,(int)MathMax(0,ktr_episode[j].entries-1),Max_Additional_Entries_Per_Episode); return false; }
       datetime last=ktr_episode[j].last_add;
       // A newly created episode never receives an addition in its first signal bar.
       int born=iBarShift(_Symbol,_Period,ktr_episode[j].opened,false);
       if(born<=0) return false;
-      if(last>0 && iBarShift(_Symbol,_Period,last,false)<Additional_Entry_Cooldown_Main_Bars) return false;
+      if(last>0)
+      {
+         int shift=iBarShift(_Symbol,_Period,last,false);
+         bool at_open=shift>=0 && last==iTime(_Symbol,_Period,shift);
+         if(!KTRAdditionCooldownAllows(shift,at_open,Additional_Entry_Cooldown_Main_Bars)) return false;
+      }
       if(event<=ktr_episode[j].opened && event_tf==PeriodSeconds(_Period)) return false;
    }
    MqlTick quote; if(!SymbolInfoTick(_Symbol,quote) || quote.ask<=0 || quote.bid<=0) return false;
@@ -125,7 +167,12 @@ bool KTRPrepare(KTRMarket &m,const int dir,const bool first,const datetime event
    double loss_per_lot=-unit+ktr_commission;
    double volume=KTRFloorVolume(budget,loss_per_lot,SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),
                                SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX));
-   if(volume<=0) return false;
+   if(volume<=0)
+   {
+      PrintFormat("[KTR] %s volume rejected: budget=%.2f loss_per_lot=%.2f calculated_lots=%.8f minimum=%.8f step=%.8f entry=%.*f SL=%.*f",
+         first?"FIRST":"ADDITION",budget,loss_per_lot,budget/loss_per_lot,SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),_Digits,price,_Digits,stop);
+      return false;
+   }
    double limit=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_LIMIT),used=0;
    if(limit>0)
    {
@@ -186,6 +233,7 @@ void KTRSubmitCandidates(KTRMarket &m,KTRMarket &higher,const bool buy,const boo
 {
    if(ktr_intent[0].busy || ktr_intent[1].busy || ktr_daily_lock || ktr_liquidating) return;
    bool b=buy && (Trade_Direction!=TRADE_SELL_ONLY),s=sell && (Trade_Direction!=TRADE_BUY_ONLY);
+   if(first && ((buy && !b) || (sell && !s))) Print("[KTR] FIRST direction skipped by Trade_Direction setting");
    // Non-IDLE directions are not first-entry candidates; the other direction can still start.
    if(first) { b=b && ktr_episode[0].state==IDLE; s=s && ktr_episode[1].state==IDLE; }
    if(!b && !s) return;
@@ -204,7 +252,7 @@ void KTRSubmitCandidates(KTRMarket &m,KTRMarket &higher,const bool buy,const boo
    double equity=AccountInfoDouble(ACCOUNT_EQUITY),free_margin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    if(ktr_day_balance<=0)
    {
-      PrintFormat("[KTR] Entry blocked: nonpositive daily opening balance; B_day=%.2f equity=%.2f currency=%s baseline_estimated=%s. Initial funding booked during the first tester/account day can reconstruct B_day=0; no positive midnight baseline is assumed",
+      PrintFormat("[KTR] Entry blocked: nonpositive daily opening balance; B_day=%.2f equity=%.2f currency=%s baseline_estimated=%s. No verified positive opening baseline is available; no balance is invented from current equity",
          ktr_day_balance,equity,AccountInfoString(ACCOUNT_CURRENCY),ktr_baseline_estimated?"true":"false");
       return;
    }

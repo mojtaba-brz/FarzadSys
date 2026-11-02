@@ -4,7 +4,7 @@
 
 | Check | Status | Evidence / boundary |
 | --- | --- | --- |
-| Portable production core + recovery assertions | **TESTED: 84 passed, 0 failed** | `python3 tests/ktr/run_portable.py`; [recorded output](tests/ktr/results/portable.txt) |
+| Portable production core + recovery assertions | **TESTED: 112 passed, 0 failed** | `python3 tests/ktr/run_portable.py`; [recorded output](tests/ktr/results/portable.txt) |
 | C++ compatibility build | **TESTED** | g++ C++17, `-Wall -Wextra -Werror`; adapts MQL array/string plumbing only, retains production pure function bodies |
 | Existing RSI source/docs/Fibonacci preservation | **TESTED** | Byte comparison against commit `2e69947155a343f0b3a5f207b56873ca0f18fda9` |
 | Persistence API/brace/source whitespace checks | **TESTED** | Portable runner and `git diff --check` |
@@ -19,7 +19,7 @@ The repository baseline documents RSI self-tests but does not actually track a `
 
 1. Run `python3 tests/ktr/run_portable.py` from a git checkout with Python 3 and g++. This executes the production core/recovery bodies through a minimal compatibility adapter. It cannot verify MQL5 SDK calls, event scheduling or actual fills.
 2. In MetaEditor compile `Kumo_Trend_Rider.mq5`, `tests/ktr/KTR_Core_Script.mq5`, and `tests/ktr/KTR_Alignment_Script.mq5`. Capture **actual** complete compiler logs, including warnings. Resolve errors and repeat portable checks after any calculation change.
-3. Run the native core script. Its expected total is 84 assertions, but mark it passed only after its actual journal is saved.
+3. Run the native core script. Its expected total is 112 assertions, but mark it passed only after its actual journal is saved.
 4. Run the alignment script on symbols/timeframes with synchronized history. It creates no trades and checks shifted SSA/SSB plus Tenkan/Kijun against independent OHLC on eight completed bars. Failed/unready data is not a pass. Repeat for standard FX, metals and a symbol whose tick size differs from point.
 5. Use a custom-symbol fixture and visual stepping to change the forming candle wildly while completed history stays fixed. Closed decisions must not change. Then complete the candle and verify exactly one new decision. Inspect native Ichimoku displacement; portable cosine tests do not establish buffer alignment.
 
@@ -141,6 +141,14 @@ Report: executed trade and episode counts; win rate; net P&L; average trade prof
 
 ## Capacity-log regression follow-up
 
-Run `python3 -u tests/ktr/run_submission.py`. The existing 84 pure checks pass, followed by **11 passed / 0 failed** submission-control cases with explicitly stubbed broker/indicator dependencies. Cases cover no signal, failed confirmation/preparation, occupied first-entry direction, zero opening balance, actual daily-risk failure with independently expected diagnostic amounts, margin failure, unassessable existing exposure, combined pair rejection, and accepted single/pair paths. The function body is extracted from production `Execution.mqh`, not reimplemented in the harness.
+Run `python3 -u tests/ktr/run_submission.py`. The existing 112 pure checks pass, followed by **21 passed / 0 failed** submission-control cases with explicitly stubbed broker/indicator dependencies. Cases cover no signal, failed confirmation/preparation, occupied first-entry direction, zero opening balance, actual daily-risk failure with independently expected diagnostic amounts, margin failure, unassessable existing exposure, combined pair rejection, and accepted single/pair paths. The function body is extracted from production `Execution.mqh`, not reimplemented in the harness.
 
 Native follow-up remains NOT TESTED: reproduce the reported 2026-10-01 01:01 tester decision with the same preset/account configuration; confirm no capacity warning for absent candidates. For a genuine candidate, save the specific detailed baseline/risk/margin line. Test initial funding on the first tester day separately from a positive opening balance on subsequent server days. Do not change the 5% cap to suppress the message.
+
+## Addition and reversal regression follow-up
+
+The pure suite covers lifetime filled-addition caps, fresh-method latches, full-main-candle cooldown excluding a partial fill candle, and trading-session intervals/overnight carry. The stubbed harness now extracts both production `KTRSubmitCandidates` and `KTRFinishReversal`: explicit broker/time/session stubs verify closure barriers, within-bar deferral, session reopening, no duplicate submission, stale expiry, direction skips and retained risk/broker rejection consumption. **112 pure assertions + 21 stubbed cases pass.** This is not native MT5 broker evidence.
+
+Native tests still required: compare the original preset with cap 3/fresh ON; stopped-out additions must still count toward the cap after restart. On M5 with cooldown 1, an addition at 09:29 must not add at 09:30; after a full 09:30-09:35 candle a fresh event may qualify. Verify repeated touches cannot add each candle, independently fresh methods still work, and lower-TF events respect the shared cap/cooldown. Test scheduled closure/reopen inside the eligible signal bar, expiry into the next bar, delayed closing transactions, absent session metadata, holidays, first-day zero baseline, permission and minimum-volume diagnostics. Compare logged forward-cloud values with the correct native indicator location. Revised native build/rerun here: NOT TESTED.
+
+Tester capital regression: pure cases check initial 1000 funding reconstructs first-day B_day 1000, later same-day cash movements do not change that 1000 baseline, normal later-day loss reconstructs opening balance by the original rule, and missing verified initial funding cannot invent a positive balance. Native first-day acceptance must confirm the initial-funding record and baseline log; tester-only branching/history qualification remains unverified in MT5 here.

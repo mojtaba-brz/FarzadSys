@@ -14,7 +14,7 @@ The daily risk manager reconstructs server-midnight balance from available cash 
 
 ## TESTED
 
-- **84 passed / 0 failed** portable assertions executing production pure calculation/recovery function bodies via the supplied C++ compatibility adapter.
+- **112 passed / 0 failed** portable assertions executing production pure calculation/recovery function bodies via the supplied C++ compatibility adapter.
 - Included: neutral/reversal logic, causal shape confirmation, lag/similarity/plateaus, pullback/rejection/crossover, geometric and statistical risk arithmetic, volume/tick boundaries, projected daily budget, immutable incremental ZigZag, metadata and ACTIVE/SUSPENDED/missing-ownership snapshots for both directions.
 - Production pure-body compatibility build: g++ C++17, `-Wall -Wextra -Werror`.
 - All six existing RSI/docs/Fibonacci source files compare byte-for-byte against baseline commit `2e69947155a343f0b3a5f207b56873ca0f18fda9`.
@@ -37,4 +37,10 @@ MT5 market orders are non-atomic; opposing submissions may execute unequally. Br
 
 ## Capacity-log follow-up
 
-Fixed a misleading rejection path that ran even when no order passed earlier gates. Genuine blocks now distinguish nonpositive daily baseline, daily-risk capacity, margin and unassessable existing exposure, with diagnostic amounts. Risk limits and baseline policy are unchanged. The original **84 pure checks** plus **11 broker-stubbed submission-control regressions** pass; the latter exercise the production submission function and verify message routing/numbers. See `tests/ktr/results/submission.txt`. MetaEditor and the reported native tester scenario remain NOT TESTED here.
+Fixed a misleading rejection path that ran even when no order passed earlier gates. Genuine blocks now distinguish nonpositive daily baseline, daily-risk capacity, margin and unassessable existing exposure, with diagnostic amounts. Risk limits and baseline policy are unchanged. The original **112 pure checks** plus **21 broker-stubbed submission/reversal-control regressions** pass; the latter exercise the production submission function and verify message routing/numbers. See `tests/ktr/results/submission.txt`. MetaEditor and the reported native tester scenario remain NOT TESTED here.
+
+## Addition/reversal follow-up
+
+Added lifetime filled-addition cap (default 3, 0 unlimited), fresh-main-trigger gating (default ON), and full-post-fill-candle cooldown. Existing broker-history records preserve cap usage across closed additions/restart. Projected reversal logs now include calculation/confirmation times and SSA/SSB; direction skips, expiry, ownership/permission and volume blockers are explicit. Known closed sessions defer an unsubmitted trend-start candidate only inside its current signal bar; stale waits expire and rejected orders remain consumed. **112 pure + 21 broker-stubbed submission/reversal checks pass.** The user-supplied journal establishes that the prior build opened trades; revised MetaEditor compilation and MT5 replay remain NOT TESTED here. Legitimate stop, volume, risk, direction and broker rejections remain enforced.
+
+Tester first-day correction: only a verified initial funding record in an untruncated, balance-reconciled tester ledger seeds the simulation day's initial capital instead of subtracting it to zero. Live reconstruction and subsequent-day rules are unchanged. Four production calculation regressions cover funded/unfunded first day and later cash/day transitions. Current actual verification: **112 pure + 21 stubbed cases passed**; native MQL5 build/execution of these changes remains NOT TESTED.

@@ -25,6 +25,8 @@ input bool Enable_Tenkan_Kijun_Cross=false;
 input bool Enable_Flat_SSB_Bounce=false;
 input bool Enable_Kijun_Rejection=false;
 input int Additional_Entry_Cooldown_Main_Bars=1;
+input int Max_Additional_Entries_Per_Episode=3; // lifetime filled additions; 0 = unlimited
+input bool Additional_Require_Fresh_Main_Trigger=true; // rearm each method after its condition becomes false
 input double Kijun_Touch_ATR=0.15;
 input double Kijun_Rejection_Min_WickBody=1.5;
 input group "First Entry Confirmations (AND)"

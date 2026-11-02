@@ -61,8 +61,20 @@ void KTRLoadAccountHistory(const bool reset)
       ktr_ledger[i]=item;
    }
    double balance=AccountInfoDouble(ACCOUNT_BALANCE);
-   ktr_day_balance=balance-today; // reverse available cash ledger across midnight
+   // Tester initial capital is a funding record on its first simulated day,
+   // not a trading-day deposit to subtract into a fictitious zero baseline.
+   // Only use an evidenced first record from a fully reconciled tester ledger.
+   bool tester_initial=MQLInfoInteger(MQL_TESTER) && offset==0 && n>0 &&
+      ktr_ledger[0].type==DEAL_TYPE_BALANCE && ktr_ledger[0].money>0 &&
+      first_time>=ktr_day && first_time<ktr_day+86400 && MathAbs(sum-balance)<0.02;
+   double funding=tester_initial?ktr_ledger[0].money:0;
+   ktr_day_balance=KTRDailyBalance(balance,today,funding);
    ktr_baseline_estimated=offset>0 || first_time==0 || first_time>ktr_day || MathAbs(sum-balance)>0.02;
+   if(tester_initial)
+   {
+      ktr_baseline_estimated=false;
+      if(reset) PrintFormat("[KTR] Tester first-day baseline reconstructed from initial funding: B_day=%.2f funding=%.2f",ktr_day_balance,funding);
+   }
    ktr_cash_history_complete=offset==0 && first_deposit>0 && MathAbs(sum-balance)<0.02 && MathAbs(credits-AccountInfoDouble(ACCOUNT_CREDIT))<0.02;
    ktr_initial_known=ktr_cash_history_complete;
    ktr_initial=Initial_Deposit_Override>0?Initial_Deposit_Override:first_deposit;

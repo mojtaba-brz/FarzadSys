@@ -63,7 +63,35 @@ PASS top confirmation delayed by Backstep
 PASS valley confirmation delayed
 PASS confirmed ZigZag prefix invariance / no future mutation
 PASS shape prefix invariant under future changes
-KTR core: 65 passed, 0 failed
+PASS first position leaves three addition slots
+PASS two executed additions allow the third
+PASS three filled additions reach lifetime cap
+PASS closed earlier additions do not replenish cap
+PASS zero cap explicitly restores unlimited behavior
+PASS first pullback condition is fresh
+PASS continuing pullback cannot add each bar
+PASS new flat-SSB method independent of persistent pullback
+PASS false condition rearms pullback
+PASS fresh-only input OFF restores condition behavior
+PASS 09:29 fill cannot add at 09:30 M5 boundary
+PASS 09:29 fill may add after complete 09:30-09:35 candle
+PASS fill at 09:25 opening completes one full candle at 09:30
+PASS multi-bar cooldown excludes partial fill candle
+PASS zero cooldown disables delay
+PASS missing fill-bar history blocks cooldown
+PASS 01:01 is before a 01:02 trading session
+PASS session beginning inclusive
+PASS session end exclusive
+PASS overnight session same-day late segment
+PASS overnight session previous-day carry
+PASS today's evening session cannot open this morning
+PASS previous overnight session expired
+PASS full-day session belongs to current day only
+PASS verified tester initial deposit provides first-day starting baseline
+PASS later same-day deposit and trading result do not change initial tester baseline
+PASS subsequent server day reconstructs normal opening balance
+PASS no verified initial tester funding cannot invent positive baseline
+KTR core: 93 passed, 0 failed
 PASS broker metadata length fits
 PASS compact metadata roundtrip
 PASS truncated metadata rejected
@@ -83,6 +111,6 @@ PASS two BUY episode identities cannot overlap
 PASS two SELL episode identities cannot overlap
 PASS unavailable broker history prevents new orders
 PASS reversal forces closing state before further entries
-KTR combined: 84 passed, 0 failed
+KTR combined: 112 passed, 0 failed
 PASS static: no KTR persistence APIs; balanced source braces
 PASS preservation: all six existing tracked EA/docs/modules byte-for-byte unchanged
