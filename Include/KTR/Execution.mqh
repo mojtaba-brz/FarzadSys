@@ -178,9 +178,10 @@ bool KTRPrepare(KTRMarket &m,const int dir,const bool first,const datetime event
    { PrintFormat("[KTR] %s %s stop rejected: %s; signal consumed",first?"FIRST":"ADDITION",dir>0?"BUY":"SELL",ktr_stop_detail); return false; }
    double risk_pct=first?First_Entry_Risk_Percent:KTRAdditionalRisk(m,ktr_episode[j].entries+1);
    double budget=AccountInfoDouble(ACCOUNT_EQUITY)*risk_pct/100.0;
-   double worst=price+dir*Max_Deviation_Points*_Point,unit=0;
+   double worst=KTRWorstEntry(price,dir,Max_Deviation_Points,_Point),unit=0;
    ENUM_ORDER_TYPE type=dir>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
-   if(!OrderCalcProfit(type,_Symbol,1.0,worst,stop,unit) || unit>=0) return false;
+   if(!OrderCalcProfit(type,_Symbol,1.0,worst,stop,unit) || unit>=0)
+   { PrintFormat("[KTR] %s %s profit calculation rejected: quote=%.8f worst_entry=%.8f stop=%.8f unit_profit=%.8f error=%d",first?"FIRST":"ADDITION",dir>0?"BUY":"SELL",price,worst,stop,unit,GetLastError()); return false; }
    double loss_per_lot=-unit+ktr_commission;
    double volume=KTRFloorVolume(budget,loss_per_lot,SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),
                                SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX));

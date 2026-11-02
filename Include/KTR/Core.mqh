@@ -102,6 +102,8 @@ bool KTRRiskFits(const double balance,const double equity,const double open_loss
 { return balance>0 && equity>0 && open_loss>=0 && new_loss>=0 && equity-open_loss-new_loss>=balance*(1-percent/100.0); }
 double KTRDailyBalance(const double current_balance,const double day_movements,const double verified_tester_funding)
 { return current_balance-day_movements+verified_tester_funding; }
+double KTRWorstEntry(const double price,const int dir,const uint deviation,const double point)
+{ return price+(double)dir*(double)deviation*point; }
 double KTRRoundStop(const double level,const double tick,const int dir)
 { if(tick<=0) return 0; return (dir>0?MathFloor(level/tick):MathCeil(level/tick))*tick; }
 bool KTRAdditionCapAllows(const int executed_entries,const int max_additions)

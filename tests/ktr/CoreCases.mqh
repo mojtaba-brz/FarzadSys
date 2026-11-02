@@ -138,6 +138,8 @@ void KTRRunCoreCases()
    KTRAssert(KTRNear(KTRDailyBalance(1220,1220,1000),1000),"later same-day deposit and trading result do not change initial tester baseline");
    KTRAssert(KTRNear(KTRDailyBalance(980,-20,0),1000),"subsequent server day reconstructs normal opening balance");
    KTRAssert(KTRDailyBalance(1000,1000,0)==0,"no verified initial tester funding cannot invent positive baseline");
+   KTRAssert(KTRNear(KTRWorstEntry(4000,1,10,.01),4000.1),"BUY deviation reserves higher entry");
+   KTRAssert(KTRNear(KTRWorstEntry(4000,-1,10,.01),3999.9),"SELL unsigned deviation reserves lower entry");
    PrintFormat("KTR core: %d passed, %d failed",ktr_pass,ktr_fail);
 }
 #endif

@@ -91,7 +91,9 @@ PASS verified tester initial deposit provides first-day starting baseline
 PASS later same-day deposit and trading result do not change initial tester baseline
 PASS subsequent server day reconstructs normal opening balance
 PASS no verified initial tester funding cannot invent positive baseline
-KTR core: 93 passed, 0 failed
+PASS BUY deviation reserves higher entry
+PASS SELL unsigned deviation reserves lower entry
+KTR core: 95 passed, 0 failed
 PASS broker metadata length fits
 PASS compact metadata roundtrip
 PASS truncated metadata rejected
@@ -111,7 +113,7 @@ PASS two BUY episode identities cannot overlap
 PASS two SELL episode identities cannot overlap
 PASS unavailable broker history prevents new orders
 PASS reversal forces closing state before further entries
-KTR combined: 112 passed, 0 failed
+KTR combined: 114 passed, 0 failed
 PASS static: no KTR persistence APIs; balanced source braces
 PASS preservation: all six existing tracked EA/docs/modules byte-for-byte unchanged
 PASS no signal + zero baseline: no invented capacity rejection
